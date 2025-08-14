@@ -1,0 +1,17 @@
+#  Node.js (backend /TimeZone_back)
+.env
+node_modules/
+
+#  Mac OS (fichiers système)
+.DS_Store
+
+#  Logs
+*.log
+
+#  IDE / éditeurs
+.vscode/
+.idea/
+*.swp
+
+#  OS / autres
+Thumbs.db
