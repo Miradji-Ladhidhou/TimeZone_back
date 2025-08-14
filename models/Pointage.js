@@ -7,7 +7,7 @@ module.exports = (sequelize) => {
       entrepriseId: { type: DataTypes.INTEGER, allowNull: false },
       utilisateurId: { type: DataTypes.INTEGER, allowNull: false },
       date_pointage: { type: DataTypes.DATEONLY, allowNull: false },
-      heure_entree: { type: DataTypes.DATE }, // timestamp réel si tu uploade depuis une pointeuse
+      heure_entree: { type: DataTypes.DATE }, 
       heure_sortie: { type: DataTypes.DATE },
       heures_travaillees_min: { type: DataTypes.INTEGER, allowNull: true }, // calculé côté service
       heures_supp_min: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
