@@ -37,7 +37,7 @@ app.get('/', (req, res) => res.json({ message: 'API TimeZone SaaS fonctionne !' 
 // Synchronisation DB et démarrage serveur
 const PORT = process.env.PORT || 5050;
 
-sequelize.sync({ alter: true }) // ou { force: true } si besoin réinitialiser la DB
+sequelize.sync({ alter: true }) 
   .then(() => {
     console.log('Connexion à la base OK');
     app.listen(PORT, () => console.log(`Serveur démarré sur http://localhost:${PORT}`));

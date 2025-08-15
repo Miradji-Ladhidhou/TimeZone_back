@@ -1,4 +1,5 @@
 const { Conge } = require('../models');
+const { getCongesAlertes } = require('../utils/congesAlertes');
 
 const checkEntrepriseAccess = (req, entrepriseId) => {
   if (req.user.role === 'super_admin') return true;
@@ -64,6 +65,23 @@ exports.deleteConge = async (req, res) => {
     await conge.destroy();
     res.json({ message: 'Congé supprimé' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.alertesConges = async (req, res) => {
+  try {
+    // Option : filtrer par utilisateur si req.query.utilisateur_id
+    const utilisateurId = req.query.utilisateur_id ? parseInt(req.query.utilisateur_id) : null;
+    
+    // Si l'utilisateur n'est pas super_admin, on force l'entreprise
+    const alertes = await getCongesAlertes(
+      req.user.role !== 'super_admin' ? { entrepriseId: req.user.entrepriseId, utilisateurId } : utilisateurId
+    );
+
+    res.json(alertes);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };
