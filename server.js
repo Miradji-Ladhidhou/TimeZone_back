@@ -11,6 +11,7 @@ const dateBloqueeRoutes = require('./routes/dateBloqueeRoutes');
 const horaireTravailRoutes = require('./routes/horaireTravailRoutes');
 const regleHeuresSuppRoutes = require('./routes/regleHeuresSuppRoutes');
 const pointageRoutes = require('./routes/pointageRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 // Middlewares
 const { authMiddleware } = require('./middlewares/authMiddleware');
@@ -30,6 +31,7 @@ app.use('/api/dates-bloquees', dateBloqueeRoutes);
 app.use('/api/horaires-travail', horaireTravailRoutes);
 app.use('/api/regles-heures-supp', regleHeuresSuppRoutes);
 app.use('/api/pointages', pointageRoutes);
+app.use('/api/auth', authRoutes);
 
 // Test route
 app.get('/', (req, res) => res.json({ message: 'API TimeZone SaaS fonctionne !' }));
