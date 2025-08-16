@@ -15,3 +15,5 @@ node_modules/
 
 #  OS / autres
 Thumbs.db
+
+createSuperAdmin.js
