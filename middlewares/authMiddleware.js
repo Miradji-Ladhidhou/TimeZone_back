@@ -1,20 +1,15 @@
 const jwt = require('jsonwebtoken');
-const { Utilisateur } = require('../models');
-require('dotenv').config();
 
-exports.authMiddleware = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Token manquant' });
+exports.authMiddleware = (req, res, next) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Token manquant' });
 
-  const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await Utilisateur.findByPk(decoded.id);
-    if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' });
-
-    req.user = user;
-    next();
-  } catch (err) {
-    res.status(401).json({ error: 'Token invalide' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = payload; 
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Token invalide' });
   }
 };
