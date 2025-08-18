@@ -1,19 +1,20 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { Utilisateur, Entreprise } = require('../models');
+const { sendEmail } = require('../utils/emailService');
 
 // LOGIN
 exports.login = async (req, res) => {
   try {
     const { email, mot_de_passe } = req.body;
-    const user = await Utilisateur.scope('withPassword').findOne({ where: { email } });
-    if (!user || !user.actif) return res.status(401).json({ error: 'Email ou mot de passe invalide' });
+    const utilisateur = await Utilisateur.scope('withPassword').findOne({ where: { email } });
+    if (!utilisateur || !utilisateur.actif) return res.status(401).json({ error: 'Email ou mot de passe invalide' });
 
-    const match = await bcrypt.compare(mot_de_passe, user.mot_de_passe);
+    const match = await bcrypt.compare(mot_de_passe, utilisateur.mot_de_passe);
     if (!match) return res.status(401).json({ error: 'Email ou mot de passe invalide' });
 
     const token = jwt.sign(
-      { id: user.id, entrepriseId: user.entrepriseId, role: user.role },
+      { id: utilisateur.id, entrepriseId: utilisateur.entrepriseId, role: utilisateur.role },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -27,34 +28,59 @@ exports.login = async (req, res) => {
 exports.changeMyPassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const user = await Utilisateur.scope('withPassword').findByPk(req.user.id);
-    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
-    const ok = await bcrypt.compare(currentPassword, user.mot_de_passe);
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 8 caractères' });
+    }
+
+    const utilisateur = await Utilisateur.scope('withPassword').findByPk(req.user.id);
+    if (!utilisateur) return res.status(404).json({ error: 'Utilisateur introuvable' });
+
+    const ok = await bcrypt.compare(currentPassword, utilisateur.mot_de_passe);
     if (!ok) return res.status(400).json({ error: 'Mot de passe actuel invalide' });
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await user.update({ mot_de_passe: hash });
-    res.json({ message: 'Mot de passe mis à jour' });
+    await utilisateur.update({ mot_de_passe: hash });
+
+    // Envoi d'email après modification
+    const subject = 'Confirmation de changement de mot de passe';
+    const html = `<p>Bonjour ${utilisateur.prenom} ${utilisateur.nom},</p>
+                  <p>Votre mot de passe a été modifié avec succès.</p>
+                  <p>Si vous n'êtes pas à l'origine de ce changement, veuillez contacter immédiatement l'équipe TimeZone App.</p>
+                  <p>Cordialement,<br>L’équipe TimeZone App</p>`;
+
+    try {
+      await sendEmail({
+        to: utilisateur.email,
+        subject,
+        text: `Bonjour ${utilisateur.prenom} ${utilisateur.nom}, votre mot de passe a été modifié avec succès.`,
+        html
+      });
+    } catch (err) {
+      console.error('Erreur lors de l\'envoi de l\'email de confirmation:', err);
+    }
+
+    res.json({ message: 'Mot de passe mis à jour avec succès' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur lors du changement de mot de passe' });
   }
 };
 
-// ADMIN/SUPER_ADMIN: réinitialiser le mot de passe d’un user
+// ADMIN/SUPER_ADMIN: réinitialiser le mot de passe d’un utilisateur
 exports.resetPassword = async (req, res) => {
   try {
     const { userId, newPassword } = req.body;
-    const target = await Utilisateur.scope('withPassword').findByPk(userId);
-    if (!target) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    const utilisateur = await Utilisateur.scope('withPassword').findByPk(userId);
+    if (!utilisateur) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
     // droits: super_admin tout; admin_entreprise uniquement sa société
-    if (req.user.role === 'admin_entreprise' && target.entrepriseId !== req.user.entrepriseId) {
+    if (req.user.role === 'admin_entreprise' && utilisateur.entrepriseId !== req.user.entrepriseId) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await target.update({ mot_de_passe: hash });
+    await utilisateur.update({ mot_de_passe: hash });
     res.json({ message: 'Mot de passe réinitialisé' });
   } catch (err) {
     res.status(400).json({ error: err.message });

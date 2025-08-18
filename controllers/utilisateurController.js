@@ -1,5 +1,7 @@
 const { Utilisateur } = require('../models');
 const bcrypt = require('bcrypt');
+const generatePassword = require('../utils/generatePassword');
+const { sendEmail } = require('../utils/emailService');
 
 const checkEntrepriseAccess = (req, entrepriseId) => {
   if (req.user.role === 'super_admin') return true;
@@ -15,7 +17,7 @@ exports.createUtilisateur = async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
     }
 
-    const { nom, prenom, email, mot_de_passe } = req.body;
+    const { nom, prenom, email } = req.body;
 
     // rôle imposé par le serveur (pas depuis le front)
     let role = 'employe';
@@ -34,7 +36,8 @@ exports.createUtilisateur = async (req, res) => {
       entrepriseId = req.user.entrepriseId;
     }
 
-    const hash = await bcrypt.hash(mot_de_passe, 10);
+    const plainPassword = generatePassword(12);
+    const hash = await bcrypt.hash(plainPassword, 10);
     const utilisateur = await Utilisateur.create({
       nom, prenom, email,
       mot_de_passe: hash,
@@ -43,7 +46,38 @@ exports.createUtilisateur = async (req, res) => {
       actif: true,
     });
 
-    res.status(201).json(utilisateur);
+    // Envoi du mot de passe temporaire par email
+    const subject = 'Bienvenue sur TimeZone App';
+    const html = `<p>Bonjour ${utilisateur.prenom} ${utilisateur.nom},</p>
+      <p>Votre compte a été créé avec succès. Voici vos identifiants de connexion :</p>
+      <p>Email : ${email}</p>
+      <p>Mot de passe temporaire : <strong>${plainPassword}</strong></p>
+      <p>Veuillez vous connecter et changer votre mot de passe dès que possible.</p>
+      <p>Cordialement,<br>L’équipe TimeZone App</p>`;
+
+    try {
+      await sendEmail({
+        to: email,
+        subject,
+        text: `Bonjour ${utilisateur.prenom} ${utilisateur.nom}, votre mot de passe temporaire est : ${plainPassword}`,
+        html
+      });
+    } catch (err) {
+      console.error('Erreur lors de l\'envoi de l\'email:', err);
+      return res.status(500).json({ error: 'Erreur lors de l\'envoi de l\'email' });
+    }
+
+    res.status(201).json({
+      message: 'Utilisateur créé avec succès. Un mot de passe temporaire a été généré et envoyé par email.',
+      utilisateur: {
+        id: utilisateur.id,
+        nom: utilisateur.nom,
+        prenom: utilisateur.prenom,
+        email: utilisateur.email,
+        role: utilisateur.role,
+        entrepriseId: utilisateur.entrepriseId,
+      },
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -97,7 +131,7 @@ exports.updateUtilisateur = async (req, res) => {
     // on empêche la mise à jour du rôle par quiconque sauf super_admin (et admin_entreprise ne peut pas promouvoir admin)
     if ('role' in req.body) {
       if (req.user.role === 'super_admin') {
-        const allowed = ['admin_entreprise','manager','employe'];
+        const allowed = ['admin_entreprise', 'manager', 'employe'];
         if (!allowed.includes(req.body.role)) return res.status(400).json({ error: 'Rôle non autorisé' });
       } else {
         delete req.body.role;
