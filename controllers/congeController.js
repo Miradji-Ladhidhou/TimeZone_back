@@ -16,7 +16,7 @@ const getChevauchements = async (conge) => {
   const autresConges = await Conge.findAll({
     where: {
       entrepriseId: conge.entrepriseId,
-      statut: { [Op.in]: ['en_attente', 'accepte'] },
+      statut: { [Op.in]: ['en_attente', 'approuve'] },
       id: { [Op.ne]: conge.id },
       [Op.or]: [
         { date_debut: { [Op.between]: [conge.date_debut, conge.date_fin] } },
@@ -127,44 +127,74 @@ exports.getCongeById = async (req, res) => {
 exports.updateConge = async (req, res) => {
   try {
     const conge = await Conge.findByPk(req.params.id);
-    if (!conge) return res.status(404).json({ error: 'Congé non trouvé' });
+    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
 
-    if (!checkEntrepriseAccess(req, conge.entrepriseId) && req.user.id !== conge.utilisateurId) {
-      return res.status(403).json({ error: 'Accès refusé' });
+    // Vérifier que l’utilisateur modifie son propre congé
+    if (req.user.id !== conge.utilisateurId) {
+      return res.status(403).json({ error: "Accès refusé" });
     }
 
-    const prevStatus = conge.statut;
-    await conge.update(req.body);
+    // Seulement modifiable si en attente
+    if (conge.statut !== "en_attente") {
+      return res.status(400).json({ error: "Impossible de modifier un congé déjà traité" });
+    }
 
-    //Envoi d’email si le statut a changé
-    if (req.body.statut && req.body.statut !== prevStatus) {
-      const user = await Utilisateur.findByPk(conge.utilisateurId);
+    // Champs autorisés
+    const allowedFields = ["date_debut", "date_fin", "commentaire"];
+    const updates = {};
+    for (let key of allowedFields) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
 
-      if (user) {
-        const subject = `Votre demande de congé a été ${conge.statut}`;
-        let html = `
-          <p>Bonjour ${user.prenom} ${user.nom},</p>
-          <p>Votre demande de congé du <b>${conge.date_debut}</b> au <b>${conge.date_fin}</b> a été <b>${conge.statut}</b>.</p>
-        `;
+    await conge.update(updates);
+    res.json(conge);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
 
-        if (conge.statut === 'refuse' && conge.commentaire) {
-          html += `<p><b>Motif du refus :</b> ${conge.commentaire}</p>`;
-        } else if (conge.statut === 'accepte' && conge.commentaire) {
-          html += `<p><b>Commentaire :</b> ${conge.commentaire}</p>`;
-        }
+exports.validerConge = async (req, res) => {
+  try {
+    const conge = await Conge.findByPk(req.params.id);
+    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
 
-        html += `<p>Cordialement,<br>L’équipe TimeZone App</p>`;
+    // Vérif rôle et entreprise
+    if (!["super_admin", "admin_entreprise", "manager"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Seul un manager ou admin peut valider un congé" });
+    }
+    if (!checkEntrepriseAccess(req, conge.entrepriseId)) {
+      return res.status(403).json({ error: "Accès refusé" });
+    }
 
-        try {
-          await sendEmail({
-            to: user.email,
-            subject,
-            text: `Votre demande de congé a été ${conge.statut}.`,
-            html
-          });
-        } catch (err) {
-          console.error("Erreur lors de l'envoi de l'email congé:", err);
-        }
+    const { statut, commentaire } = req.body;
+
+    // Validation statut
+    if (!["approuve", "refuse"].includes(statut)) {
+      return res.status(400).json({ error: "Statut invalide" });
+    }
+
+    await conge.update({ statut, commentaire });
+
+    // Envoi email
+    const user = await Utilisateur.findByPk(conge.utilisateurId);
+    if (user) {
+      const fullName = [user.prenom, user.nom].filter(Boolean).join(" ");
+      const subject = `Votre demande de congé a été ${statut}`;
+      let html = `
+        <p>Bonjour ${fullName},</p>
+        <p>Votre demande de congé du <b>${conge.date_debut}</b> au <b>${conge.date_fin}</b> a été <b>${statut}</b>.</p>
+      `;
+
+      if (commentaire) {
+        html += `<p><b>Commentaire :</b> ${commentaire}</p>`;
+      }
+
+      html += `<p>Cordialement,<br>L’équipe TimeZone App</p>`;
+
+      try {
+        await sendEmail({ to: user.email, subject, html, text: subject });
+      } catch (err) {
+        console.error("Erreur lors de l'envoi de l'email congé:", err);
       }
     }
 
@@ -173,6 +203,7 @@ exports.updateConge = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 
 
 exports.deleteConge = async (req, res) => {

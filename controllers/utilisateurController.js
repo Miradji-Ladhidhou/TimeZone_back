@@ -1,4 +1,5 @@
 const { Utilisateur } = require('../models');
+const { Entreprise } = require('../models');
 const bcrypt = require('bcrypt');
 const generatePassword = require('../utils/generatePassword');
 const { sendEmail } = require('../utils/emailService');
@@ -36,6 +37,12 @@ exports.createUtilisateur = async (req, res) => {
       entrepriseId = req.user.entrepriseId;
     }
 
+    // Vérification de l'existence de l'entreprise
+    const entreprise = await Entreprise.findByPk(entrepriseId);
+    if (!entreprise) {
+      return res.status(400).json({ error: 'Entreprise non trouvée' });
+    }
+
     const plainPassword = generatePassword(12);
     const hash = await bcrypt.hash(plainPassword, 10);
     const utilisateur = await Utilisateur.create({
@@ -49,7 +56,9 @@ exports.createUtilisateur = async (req, res) => {
     // Envoi du mot de passe temporaire par email
     const subject = 'Bienvenue sur TimeZone App';
     const html = `<p>Bonjour ${utilisateur.prenom} ${utilisateur.nom},</p>
-      <p>Votre compte a été créé avec succès. Voici vos identifiants de connexion :</p>
+      <p>Votre compte a été créé avec succès.</p>
+      <p>Pour l'entreprise : ${entreprise.nom}</p>
+      <p>Voici vos informations de connexion :</p>
       <p>Email : ${email}</p>
       <p>Mot de passe temporaire : <strong>${plainPassword}</strong></p>
       <p>Veuillez vous connecter et changer votre mot de passe dès que possible.</p>

@@ -5,12 +5,13 @@ module.exports = (sequelize) => {
     "Utilisateur",
     {
       nom: { type: DataTypes.STRING(100), allowNull: false },
-      prenom: { type: DataTypes.STRING(100) },
+      prenom: { type: DataTypes.STRING(100), allowNull: false },
       email: { type: DataTypes.STRING(150), allowNull: false, validate: { isEmail: true } },
       mot_de_passe: { type: DataTypes.STRING, allowNull: false },
       role: {
         type: DataTypes.ENUM("super_admin", "admin_entreprise", "manager", "employe"),
         defaultValue: "employe",
+        allowNull: false,
       },
       actif: { type: DataTypes.BOOLEAN, defaultValue: true },
       date_embauche: { type: DataTypes.DATEONLY },
@@ -20,6 +21,7 @@ module.exports = (sequelize) => {
         references: { model: "entreprises", key: "id" },
         onUpdate: "CASCADE",
         onDelete: "CASCADE",
+        allowNull: false,
       },
     },
     {
