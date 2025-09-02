@@ -17,9 +17,10 @@ router.post(
 // Liste des congés
 router.get(
   '/',
-  roleMiddleware(['super_admin', 'admin_entreprise', 'manager', 'employe']),
+  roleMiddleware(['super_admin', 'admin_entreprise', 'manager']),
   congeController.getAllConges
 );
+
 
 // Alertes 
 router.get(
@@ -38,9 +39,14 @@ router.get(
 // Employé modifie son congé
 router.put(
   '/:id',
-  authMiddleware,
+  roleMiddleware(['super_admin', 'admin_entreprise', 'manager', 'employe']),
   congeController.updateConge
 );
+
+// Solde congés par employé
+router.get(
+  "/soldes/:userId", authMiddleware, congeController.getSolde);
+
 
 // Manager/admin valide/refuse
 router.put(
@@ -52,7 +58,7 @@ router.put(
 // Suppression congé
 router.delete(
   '/:id',
-  roleMiddleware(['super_admin', 'admin_entreprise', 'employe']),
+  roleMiddleware(['super_admin', 'admin_entreprise']),
   congeController.deleteConge
 );
 

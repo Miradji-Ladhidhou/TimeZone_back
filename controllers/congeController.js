@@ -1,237 +1,264 @@
-const { Conge } = require('../models');
-const { getCongesAlertes } = require('../utils/congesAlertes');
-const { DateBloquee } = require('../models');
-const { Utilisateur } = require('../models');
-const { sendEmail } = require('../utils/emailService');
-const { Op } = require('sequelize');
+const { Conge, Utilisateur, Entreprise, DatesBloquee, JoursFeries } = require('../models');
+const { Op } = require("sequelize");
+const { envoyerEmail } = require('../utils/emailService');
+const { majSolde } = require('../utils/solde');
 
-// Helper pour formater les dates
-const formatDate = (date) => new Date(date).toLocaleDateString('fr-FR');
+// ========================
+// Helper : calcul jours effectifs (hors fériés non déduits)
+// ========================
+const calculerJoursEffectifs = async (conge) => {
+  const totalJours = Math.ceil(
+    (new Date(conge.date_fin) - new Date(conge.date_debut)) / (1000 * 60 * 60 * 24)
+  ) + 1;
 
-// Helper pour détecter chevauchements
-const getChevauchements = async (conge) => {
-  const chevauchements = [];
-
-  // Autres congés
-  const autresConges = await Conge.findAll({
+  const joursFeries = await JoursFeries.findAll({
     where: {
-      entrepriseId: conge.entrepriseId,
-      statut: { [Op.in]: ['en_attente', 'approuve'] },
-      id: { [Op.ne]: conge.id },
       [Op.or]: [
-        { date_debut: { [Op.between]: [conge.date_debut, conge.date_fin] } },
-        { date_fin: { [Op.between]: [conge.date_debut, conge.date_fin] } },
-        { date_debut: { [Op.lte]: conge.date_debut }, date_fin: { [Op.gte]: conge.date_fin } }
-      ]
+        { entrepriseId: null },
+        { entrepriseId: conge.entrepriseId }
+      ],
+      date: { [Op.between]: [conge.date_debut, conge.date_fin] },
+      deduire_temps: false
     }
   });
-  chevauchements.push(...autresConges.map(c => `${formatDate(c.date_debut)} → ${formatDate(c.date_fin)} (autre congé)`));
 
-  // Dates bloquées
-  const datesBloquees = await DateBloquee.findAll({
-    where: {
-      entrepriseId: conge.entrepriseId,
-      [Op.or]: [
-        { date_debut: { [Op.between]: [conge.date_debut, conge.date_fin] } },
-        { date_fin: { [Op.between]: [conge.date_debut, conge.date_fin] } },
-        { date_debut: { [Op.lte]: conge.date_debut }, date_fin: { [Op.gte]: conge.date_fin } }
-      ]
-    }
-  });
-  chevauchements.push(...datesBloquees.map(d => `${formatDate(d.date_debut)} → ${formatDate(d.date_fin)} (date bloquée)`));
-
-  return chevauchements;
+  return totalJours - joursFeries.length;
 };
 
-const checkEntrepriseAccess = (req, entrepriseId) => req.user.role === 'super_admin' || req.user.entrepriseId === entrepriseId;
-
-
+// ========================
+// Créer un congé
+// ========================
 exports.createConge = async (req, res) => {
   try {
-    if (!['super_admin', 'admin_entreprise', 'manager', 'employe'].includes(req.user.role))
-      return res.status(403).json({ error: 'Accès refusé' });
+    const { date_debut, date_fin, typeConge } = req.body;
+    const utilisateurId = req.user.id;
 
-    if (req.user.role !== 'super_admin') req.body.entrepriseId = req.user.entrepriseId;
-    if (req.user.role === 'employe') req.body.utilisateurId = req.user.id;
-
-    const conge = await Conge.create(req.body);
-    const user = await Utilisateur.findByPk(conge.utilisateurId);
-
-    // Email confirmation employé
-    if (user?.email) {
-      await sendEmail({
-        to: user.email,
-        subject: "Confirmation de votre demande de congé",
-        html: `<p>Bonjour ${user.prenom},</p>
-               <p>Votre demande de congé du <b>${formatDate(conge.date_debut)}</b> au <b>${formatDate(conge.date_fin)}</b> a bien été enregistrée.</p>
-               <p>Statut actuel : ${conge.statut}.</p>
-               <p>Vous serez notifié dès qu’un admin aura validé ou refusé votre demande.</p>
-               <p>Cordialement,<br>L’équipe RH</p>`
-      });
-    }
-
-    // Chevauchements
-    const chevauchements = await getChevauchements(conge);
-
-    // Notifier tous les admins de l'entreprise
-    const admins = await Utilisateur.findAll({ where: { entrepriseId: conge.entrepriseId, role: 'admin_entreprise' } });
-    for (const admin of admins) {
-      if (!admin.email) continue;
-
-      let html = `<p>Bonjour ${admin.prenom},</p>
-                  <p>${user.prenom} ${user.nom} a fait une demande de congé du <b>${formatDate(conge.date_debut)}</b> au <b>${formatDate(conge.date_fin)}</b>.</p>
-                  <p>Statut actuel : ${conge.statut}.</p>`;
-
-      if (chevauchements.length) {
-        html += `<p> Attention : chevauchements détectés avec les périodes suivantes :</p>
-                 <ul>${chevauchements.map(c => `<li>${c}</li>`).join('')}</ul>`;
+    // Vérifier chevauchements
+    const chevauchements = await Conge.findAll({
+      where: {
+        utilisateurId,
+        statut: { [Op.in]: ["en_attente", "approuve"] },
+        [Op.or]: [
+          { date_debut: { [Op.between]: [date_debut, date_fin] } },
+          { date_fin: { [Op.between]: [date_debut, date_fin] } },
+          {
+            [Op.and]: [
+              { date_debut: { [Op.lte]: date_debut } },
+              { date_fin: { [Op.gte]: date_fin } }
+            ]
+          }
+        ]
       }
+    });
 
-      html += `<p>Merci de vous connecter à la plateforme pour valider ou refuser la demande.</p>
-               <p>Cordialement,<br>L’équipe RH</p>`;
+    if (chevauchements.length > 0)
+      return res.status(400).json({ error: "Chevauchement avec un autre congé" });
 
-      await sendEmail({ to: admin.email, subject: "Nouvelle demande de congé à valider", html });
+    // Vérifier dates bloquées
+    const entreprise = await Entreprise.findByPk(req.user.entrepriseId);
+    const datesBloquees = await DatesBloquee.findAll({
+      where: {
+        entrepriseId: entreprise.id,
+        date: { [Op.between]: [date_debut, date_fin] }
+      }
+    });
+
+    if (datesBloquees.length > 0)
+      return res.status(400).json({ error: "Ces dates sont bloquées par l'entreprise" });
+
+    // Vérifier jours fériés interdits
+    const joursFeries = await JoursFeries.findAll({
+      where: {
+        [Op.or]: [
+          { entrepriseId: null },
+          { entrepriseId: entreprise.id }
+        ],
+        date: { [Op.between]: [date_debut, date_fin] }
+      }
+    });
+
+    if (joursFeries.some(j => j.deduire_temps === false))
+      return res.status(400).json({ error: "La période inclut des jours non travaillés (fériés interdits)" });
+
+    // Créer le congé
+    const conge = await Conge.create({
+      utilisateurId,
+      entrepriseId: req.user.entrepriseId,
+      date_debut,
+      date_fin,
+      typeConge,
+      statut: "en_attente"
+    });
+
+    // Notification aux admins/managers
+    const admins = await Utilisateur.findAll({
+      where: {
+        entrepriseId: req.user.entrepriseId,
+        role: { [Op.in]: ["admin_entreprise", "manager"] }
+      }
+    });
+
+    for (const admin of admins) {
+      if (admin.email) {
+        await envoyerEmail(
+          admin.email,
+          "Nouvelle demande de congé",
+          `Une nouvelle demande de congé a été soumise par ${req.user.nom} ${req.user.prenom}.`
+        );
+      }
     }
 
     res.status(201).json(conge);
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ error: err.message });
-  }
-};
-
-exports.getAllConges = async (req, res) => {
-  try {
-    const where = {};
-    if (!['super_admin'].includes(req.user.role)) where.entrepriseId = req.user.entrepriseId;
-    if (req.user.role === 'employe') where.utilisateurId = req.user.id;
-
-    const conges = await Conge.findAll({ where });
-    res.json(conges);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// ========================
+// Récupérer tous les congés (admin/manager)
+// ========================
+exports.getAllConges = async (req, res) => {
+  try {
+    const congés = await Conge.findAll({
+      include: [{ model: Utilisateur, attributes: ['nom', 'prenom', 'email'] }]
+    });
+    res.json(congés);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ========================
+// Récupérer un congé par ID
+// ========================
 exports.getCongeById = async (req, res) => {
   try {
-    const conge = await Conge.findByPk(req.params.id);
-    if (!conge) return res.status(404).json({ error: 'Congé non trouvé' });
-    if (!checkEntrepriseAccess(req, conge.entrepriseId) && req.user.id !== conge.utilisateurId) return res.status(403).json({ error: 'Accès refusé' });
+    const conge = await Conge.findByPk(req.params.id, {
+      include: [{ model: Utilisateur, attributes: ['nom', 'prenom', 'email'] }]
+    });
+    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
     res.json(conge);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// ========================
+// Mettre à jour un congé
+// ========================
 exports.updateConge = async (req, res) => {
   try {
     const conge = await Conge.findByPk(req.params.id);
     if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
 
-    // Vérifier que l’utilisateur modifie son propre congé
-    if (req.user.id !== conge.utilisateurId) {
+    const estAdmin = ["super_admin", "admin_entreprise", "manager"].includes(req.user.role);
+    if (conge.utilisateurId !== req.user.id && !estAdmin)
       return res.status(403).json({ error: "Accès refusé" });
-    }
 
-    // Seulement modifiable si en attente
-    if (conge.statut !== "en_attente") {
-      return res.status(400).json({ error: "Impossible de modifier un congé déjà traité" });
-    }
-
-    // Champs autorisés
-    const allowedFields = ["date_debut", "date_fin", "commentaire"];
-    const updates = {};
-    for (let key of allowedFields) {
-      if (req.body[key] !== undefined) updates[key] = req.body[key];
-    }
-
-    await conge.update(updates);
+    await conge.update(req.body);
     res.json(conge);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-exports.validerConge = async (req, res) => {
-  try {
-    const conge = await Conge.findByPk(req.params.id);
-    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
-
-    // Vérif rôle et entreprise
-    if (!["super_admin", "admin_entreprise", "manager"].includes(req.user.role)) {
-      return res.status(403).json({ error: "Seul un manager ou admin peut valider un congé" });
-    }
-    if (!checkEntrepriseAccess(req, conge.entrepriseId)) {
-      return res.status(403).json({ error: "Accès refusé" });
-    }
-
-    const { statut, commentaire } = req.body;
-
-    // Validation statut
-    if (!["approuve", "refuse"].includes(statut)) {
-      return res.status(400).json({ error: "Statut invalide" });
-    }
-
-    await conge.update({ statut, commentaire });
-
-    // Envoi email
-    const user = await Utilisateur.findByPk(conge.utilisateurId);
-    if (user) {
-      const fullName = [user.prenom, user.nom].filter(Boolean).join(" ");
-      const subject = `Votre demande de congé a été ${statut}`;
-      let html = `
-        <p>Bonjour ${fullName},</p>
-        <p>Votre demande de congé du <b>${conge.date_debut}</b> au <b>${conge.date_fin}</b> a été <b>${statut}</b>.</p>
-      `;
-
-      if (commentaire) {
-        html += `<p><b>Commentaire :</b> ${commentaire}</p>`;
-      }
-
-      html += `<p>Cordialement,<br>L’équipe TimeZone App</p>`;
-
-      try {
-        await sendEmail({ to: user.email, subject, html, text: subject });
-      } catch (err) {
-        console.error("Erreur lors de l'envoi de l'email congé:", err);
-      }
-    }
-
-    res.json(conge);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-
-
-exports.deleteConge = async (req, res) => {
-  try {
-    const conge = await Conge.findByPk(req.params.id);
-    if (!conge) return res.status(404).json({ error: 'Congé non trouvé' });
-    if (!['super_admin', 'admin_entreprise'].includes(req.user.role) && req.user.id !== conge.utilisateurId) return res.status(403).json({ error: 'Accès refusé' });
-
-    await conge.destroy();
-    res.json({ message: 'Congé supprimé' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// ========================
+// Récupérer le solde de congés d’un utilisateur
+// ========================
+exports.getSolde = async (req, res) => {
+  try {
+    const utilisateurId = req.params.userId;
+    const utilisateur = await Utilisateur.findByPk(utilisateurId);
+    if (!utilisateur) return res.status(404).json({ error: "Utilisateur non trouvé" });
+
+    const conges = await Conge.findAll({
+      where: { utilisateurId, statut: "approuve" }
+    });
+
+    // Exemple : calcul simple par type
+    const solde = {};
+    for (const c of conges) {
+      if (!solde[c.typeConge]) solde[c.typeConge] = 0;
+      solde[c.typeConge] += await calculerJoursEffectifs(c);
+    }
+
+    res.json({ utilisateurId, solde });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ========================
+// Alertes congés (prochains congés à gérer)
+// ========================
 exports.alertesConges = async (req, res) => {
   try {
-    // Option : filtrer par utilisateur si req.query.utilisateur_id
-    const utilisateurId = req.query.utilisateur_id ? parseInt(req.query.utilisateur_id) : null;
-
-    // Si l'utilisateur n'est pas super_admin, on force l'entreprise
-    const alertes = await getCongesAlertes(
-      req.user.role !== 'super_admin' ? { entrepriseId: req.user.entrepriseId, utilisateurId } : utilisateurId
-    );
-
+    const aujourdHui = new Date();
+    const alertes = await Conge.findAll({
+      where: {
+        statut: "en_attente",
+        date_debut: { [Op.lte]: aujourdHui },
+      },
+      include: [{ model: Utilisateur, attributes: ['nom', 'prenom'] }]
+    });
     res.json(alertes);
   } catch (err) {
-    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ========================
+// Valider un congé
+// ========================
+exports.validerConge = async (req, res) => {
+  try {
+    const conge = await Conge.findByPk(req.params.id);
+    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
+
+    const { statut } = req.body;
+    conge.statut = statut;
+    await conge.save();
+
+    if (statut === "approuve") {
+      const jours = await calculerJoursEffectifs(conge);
+      await majSolde(conge.utilisateurId, conge.typeConge, jours, "ajout");
+    }
+
+    const employe = await Utilisateur.findByPk(conge.utilisateurId);
+    if (employe?.email) {
+      await envoyerEmail(
+        employe.email,
+        "Mise à jour de votre demande de congé",
+        `Votre demande de congé a été ${statut}.`
+      );
+    }
+
+    res.json(conge);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ========================
+// Supprimer un congé
+// ========================
+exports.deleteConge = async (req, res) => {
+  try {
+    const conge = await Conge.findByPk(req.params.id);
+    if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
+
+    const estAdmin = ["super_admin", "admin_entreprise", "manager"].includes(req.user.role);
+    if (conge.utilisateurId !== req.user.id && !estAdmin)
+      return res.status(403).json({ error: "Accès refusé" });
+
+    if (conge.statut === "approuve") {
+      const jours = await calculerJoursEffectifs(conge);
+      await majSolde(conge.utilisateurId, conge.typeConge, jours, "retrait");
+    }
+
+    await conge.destroy();
+    res.json({ message: "Congé supprimé" });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
