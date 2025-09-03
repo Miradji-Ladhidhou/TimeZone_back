@@ -45,7 +45,10 @@ router.put(
 
 // Solde congés par employé
 router.get(
-  "/soldes/:userId", authMiddleware, congeController.getSolde);
+  "/soldes/:id",
+  roleMiddleware(['super_admin', 'admin_entreprise', 'manager', 'employe']),
+  congeController.getSolde
+);
 
 
 // Manager/admin valide/refuse

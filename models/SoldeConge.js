@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false
     },
     acquis: {
-      type: DataTypes.FLOAT, // ex: 25 jours/an
+      type: DataTypes.FLOAT, 
       defaultValue: 0
     },
     utilise: {

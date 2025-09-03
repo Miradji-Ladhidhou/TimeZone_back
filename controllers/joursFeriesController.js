@@ -7,7 +7,7 @@ exports.createJourFerie = async (req, res) => {
     let entrepriseId = null;
 
     if (req.user.role === "super_admin") {
-      entrepriseId = null; // férié national
+      entrepriseId = null; // férié global
     } else if (req.user.role === "admin_entreprise") {
       entrepriseId = req.user.entrepriseId; // férié entreprise
     } else {

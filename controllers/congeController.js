@@ -115,7 +115,7 @@ exports.createConge = async (req, res) => {
 };
 
 // ========================
-// Récupérer tous les congés (admin/manager)
+// Récupérer tous les congés 
 // ========================
 exports.getAllConges = async (req, res) => {
   try {
@@ -175,7 +175,7 @@ exports.getSolde = async (req, res) => {
       where: { utilisateurId, statut: "approuve" }
     });
 
-    // Exemple : calcul simple par type
+ 
     const solde = {};
     for (const c of conges) {
       if (!solde[c.typeConge]) solde[c.typeConge] = 0;
