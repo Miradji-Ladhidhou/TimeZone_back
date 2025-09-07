@@ -4,20 +4,40 @@ module.exports = (sequelize) => {
   const DateBloquee = sequelize.define(
     "DateBloquee",
     {
-      entrepriseId: { type: DataTypes.INTEGER, allowNull: false },
-      date_debut: { type: DataTypes.DATEONLY, allowNull: false },
-      date_fin: {
+      entrepriseId: { 
+        type: DataTypes.INTEGER, 
+        allowNull: false,
+        field : "entreprise_id",
+        references: {
+          model: "entreprises",
+          key: "id"
+        },
+        onDelete: "CASCADE",
+      },
+
+      dateDebut: { 
+        type: DataTypes.DATEONLY, 
+        allowNull: false,
+        field : "date_debut"
+      },
+
+      dateFin: {
         type: DataTypes.DATEONLY,
         allowNull: false,
+        field : "date_fin",
         validate: {
           isAfterStart(value) {
-            if (this.date_debut && value < this.date_debut) {
-              throw new Error("date_fin ne peut pas être avant date_debut");
+            if (this.dateDebut && value < this.dateDebut) {
+              throw new Error("dateFin ne peut pas être avant dateDebut");
             }
           },
         },
       },
-      raison: { type: DataTypes.TEXT },
+
+      raison: { 
+        type: DataTypes.TEXT,
+        validate: { len: [0, 500] }
+      },
     },
     {
       tableName: "dates_bloquees",

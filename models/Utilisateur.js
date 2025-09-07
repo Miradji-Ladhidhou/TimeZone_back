@@ -5,23 +5,45 @@ module.exports = (sequelize) => {
     "Utilisateur",
     {
       nom: { type: DataTypes.STRING(100), allowNull: false },
+
       prenom: { type: DataTypes.STRING(100), allowNull: false },
+
       email: { type: DataTypes.STRING(150), allowNull: false, validate: { isEmail: true } },
-      mot_de_passe: { type: DataTypes.STRING, allowNull: false },
+
+      motDePasse: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        field: "mot_de_passe",
+      },
+
       role: {
         type: DataTypes.ENUM("super_admin", "admin_entreprise", "manager", "employe"),
         defaultValue: "employe",
         allowNull: false,
       },
+
       actif: { type: DataTypes.BOOLEAN, defaultValue: true },
-      date_embauche: { type: DataTypes.DATEONLY },
+
+      dateEmbauche: { 
+        type: DataTypes.DATEONLY,
+        field: "date_embauche",
+        allowNull: true,
+      },
+
       entrepriseId: {
         type: DataTypes.INTEGER,
         allowNull: false,
+        field: "entreprise_id",
         references: { model: "entreprises", key: "id" },
         onUpdate: "CASCADE",
         onDelete: "CASCADE",
+      },
+
+      dateCreation: {
+        type: DataTypes.DATE,
         allowNull: false,
+        defaultValue: DataTypes.NOW,
+        field: "date_creation",
       },
     },
     {
@@ -29,22 +51,18 @@ module.exports = (sequelize) => {
       timestamps: true,
       underscored: true,
       defaultScope: {
-        attributes: { exclude: ["mot_de_passe"] }, // sécurité par défaut
+        attributes: { exclude: ["mot_de_passe"] }, 
       },
       scopes: {
-        withPassword: { attributes: {} }, // inclut tout (pour login uniquement)
+        withPassword: { attributes: {} }, 
         byEntreprise(entrepriseId) { return { where: { entrepriseId } }; },
       },
       indexes: [
         { fields: ["entreprise_id"] },
-        { unique: true, fields: ["email", "entreprise_id"] }, // email unique dans l’entreprise
+        { unique: true, fields: ["email", "entreprise_id"] }, 
       ],
     }
   );
-
-  Utilisateur.associate = (models) => {
-    Utilisateur.belongsTo(models.Entreprise, { foreignKey: "entrepriseId", as: "entreprise" });
-  };
 
   return Utilisateur;
 };

@@ -4,13 +4,60 @@ module.exports = (sequelize) => {
   const Pointage = sequelize.define(
     "Pointage",
     {
-      entrepriseId: { type: DataTypes.INTEGER, allowNull: false },
-      utilisateurId: { type: DataTypes.INTEGER, allowNull: false },
-      date_pointage: { type: DataTypes.DATEONLY, allowNull: false },
-      heure_entree: { type: DataTypes.DATE }, 
-      heure_sortie: { type: DataTypes.DATE },
-      heures_travaillees_min: { type: DataTypes.INTEGER, allowNull: true }, // calculé côté service
-      heures_supp_min: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      entrepriseId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        field: 'entreprise_id',
+        references: {
+          model: 'entreprises',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+
+      utilisateurId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        field: 'utilisateur_id',
+        references: {
+          model: 'utilisateurs',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+
+      datePointage: {
+        type: DataTypes.DATEONLY,
+        allowNull: false,
+        field: 'date_pointage'
+      },
+
+      heureEntree: {
+        type: DataTypes.TIME,
+        allowNull: false,
+        field: 'heure_entree'
+      },
+
+      heureSortie: {
+        type: DataTypes.TIME,
+        allowNull: true,
+        field: 'heure_sortie'
+      },
+
+      heuresTravaillees: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'heures_travaillees'
+      },
+
+      heuresSupp: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        field: 'heures_supp'
+      },
     },
     {
       tableName: "pointages",
@@ -25,10 +72,11 @@ module.exports = (sequelize) => {
         byUser(utilisateurId) { return { where: { utilisateurId } }; },
         between(start, end) {
           const { Op } = require("sequelize");
-          return { where: { date_pointage: { [Op.between]: [start, end] } } };
+          return { where: { datePointage: { [Op.between]: [start, end] } } };
         },
       },
-    }
+    },
+
   );
 
   return Pointage;

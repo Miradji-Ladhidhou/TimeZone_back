@@ -2,6 +2,7 @@ const { Conge, Utilisateur, Entreprise, DatesBloquee, JoursFeries } = require('.
 const { Op } = require("sequelize");
 const { envoyerEmail } = require('../utils/emailService');
 const { majSolde } = require('../utils/solde');
+const { Notification } = require('../models');
 
 // ========================
 // Helper : calcul jours effectifs (hors fériés non déduits)
@@ -32,8 +33,11 @@ exports.createConge = async (req, res) => {
   try {
     const { date_debut, date_fin, typeConge } = req.body;
     const utilisateurId = req.user.id;
+    const entrepriseId = req.user.entrepriseId;
 
-    // Vérifier chevauchements
+    // ========================
+    //  Vérifier chevauchements avec les autres congés
+    // ========================
     const chevauchements = await Conge.findAll({
       where: {
         utilisateurId,
@@ -54,24 +58,36 @@ exports.createConge = async (req, res) => {
     if (chevauchements.length > 0)
       return res.status(400).json({ error: "Chevauchement avec un autre congé" });
 
-    // Vérifier dates bloquées
-    const entreprise = await Entreprise.findByPk(req.user.entrepriseId);
+    // ========================
+    //  Vérifier chevauchements avec les dates bloquées
+    // ========================
     const datesBloquees = await DatesBloquee.findAll({
       where: {
-        entrepriseId: entreprise.id,
-        date: { [Op.between]: [date_debut, date_fin] }
+        entrepriseId,
+        [Op.or]: [
+          { date_debut: { [Op.between]: [date_debut, date_fin] } },
+          { date_fin: { [Op.between]: [date_debut, date_fin] } },
+          {
+            [Op.and]: [
+              { date_debut: { [Op.lte]: date_debut } },
+              { date_fin: { [Op.gte]: date_fin } }
+            ]
+          }
+        ]
       }
     });
 
     if (datesBloquees.length > 0)
       return res.status(400).json({ error: "Ces dates sont bloquées par l'entreprise" });
 
-    // Vérifier jours fériés interdits
+    // ========================
+    //  Vérifier jours fériés interdits
+    // ========================
     const joursFeries = await JoursFeries.findAll({
       where: {
         [Op.or]: [
           { entrepriseId: null },
-          { entrepriseId: entreprise.id }
+          { entrepriseId }
         ],
         date: { [Op.between]: [date_debut, date_fin] }
       }
@@ -80,20 +96,24 @@ exports.createConge = async (req, res) => {
     if (joursFeries.some(j => j.deduire_temps === false))
       return res.status(400).json({ error: "La période inclut des jours non travaillés (fériés interdits)" });
 
-    // Créer le congé
+    // ========================
+    //  Créer le congé
+    // ========================
     const conge = await Conge.create({
       utilisateurId,
-      entrepriseId: req.user.entrepriseId,
+      entrepriseId,
       date_debut,
       date_fin,
       typeConge,
       statut: "en_attente"
     });
 
-    // Notification aux admins/managers
+    // ========================
+    //  Notification aux admins/managers
+    // ========================
     const admins = await Utilisateur.findAll({
       where: {
-        entrepriseId: req.user.entrepriseId,
+        entrepriseId,
         role: { [Op.in]: ["admin_entreprise", "manager"] }
       }
     });
@@ -108,21 +128,57 @@ exports.createConge = async (req, res) => {
       }
     }
 
+    // Créer une notification dans la base de données
+    for (const admin of admins) {
+      await Notification.create({
+        utilisateur_id: admin.id,
+        type: "nouveau_conge",
+        message: `Nouvelle demande de congé de ${req.user.nom} ${req.user.prenom}.`
+      });
+    }
+
     res.status(201).json(conge);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+
+// ========================
+// Récupérer tous les congés (filtrage par rôle)
+// ========================
+exports.getAllConges = async (req, res) => {
+  try {
+    let where = {};
+    if (req.user.role === "employe") {
+      where.utilisateurId = req.user.id;
+    } else if (["admin_entreprise", "manager"].includes(req.user.role)) {
+      where.entrepriseId = req.user.entrepriseId;
+    }
+    // super_admin voit tout
+
+    const conges = await Conge.findAll({
+      where,
+      include: [{ model: Utilisateur, attributes: ["nom", "prenom", "email"] }]
+    });
+    res.json(conges);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 // ========================
-// Récupérer tous les congés 
+// Mes congés
 // ========================
-exports.getAllConges = async (req, res) => {
+exports.getMesConges = async (req, res) => {
   try {
-    const congés = await Conge.findAll({
-      include: [{ model: Utilisateur, attributes: ['nom', 'prenom', 'email'] }]
+    const conges = await Conge.findAll({
+      where: { utilisateurId: req.user.id },
+      include: [{ model: Utilisateur, attributes: ["nom", "prenom", "email"] }]
     });
-    res.json(congés);
+    res.json(conges);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -163,11 +219,17 @@ exports.updateConge = async (req, res) => {
 };
 
 // ========================
-// Récupérer le solde de congés d’un utilisateur
+// Récupérer le solde
 // ========================
 exports.getSolde = async (req, res) => {
   try {
     const utilisateurId = req.params.userId;
+
+    // Un employé ne peut voir que son propre solde
+    if (req.user.role === "employe" && req.user.id !== parseInt(utilisateurId)) {
+      return res.status(403).json({ error: "Accès interdit" });
+    }
+
     const utilisateur = await Utilisateur.findByPk(utilisateurId);
     if (!utilisateur) return res.status(404).json({ error: "Utilisateur non trouvé" });
 
@@ -175,7 +237,6 @@ exports.getSolde = async (req, res) => {
       where: { utilisateurId, statut: "approuve" }
     });
 
- 
     const solde = {};
     for (const c of conges) {
       if (!solde[c.typeConge]) solde[c.typeConge] = 0;
@@ -233,6 +294,13 @@ exports.validerConge = async (req, res) => {
       );
     }
 
+    // Créer une notification pour l'employé
+    await Notification.create({
+      utilisateur_id: conge.utilisateurId,
+      type: "mise_a_jour_conge",
+      message: `Votre demande de congé du ${conge.date_debut} au ${conge.date_fin} a été ${statut}.`
+    });
+
     res.json(conge);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -247,7 +315,7 @@ exports.deleteConge = async (req, res) => {
     const conge = await Conge.findByPk(req.params.id);
     if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
 
-    const estAdmin = ["super_admin", "admin_entreprise", "manager"].includes(req.user.role);
+    const estAdmin = ["super_admin", "admin_entreprise"].includes(req.user.role);
     if (conge.utilisateurId !== req.user.id && !estAdmin)
       return res.status(403).json({ error: "Accès refusé" });
 
@@ -257,6 +325,14 @@ exports.deleteConge = async (req, res) => {
     }
 
     await conge.destroy();
+
+    // Notification de suppression
+    await Notification.create({
+      utilisateur_id: conge.utilisateurId,
+      type: "suppression_conge",
+      message: `Votre congé du ${conge.date_debut} au ${conge.date_fin} a été supprimé.`
+    });
+
     res.json({ message: "Congé supprimé" });
   } catch (err) {
     res.status(500).json({ error: err.message });

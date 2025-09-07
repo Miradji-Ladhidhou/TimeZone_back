@@ -1,9 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const jwt = require('jsonwebtoken');
 const { sequelize } = require('./models');
 
-// Import des routes
+// Routes
 const entrepriseRoutes = require('./routes/entrepriseRoutes');
 const utilisateurRoutes = require('./routes/utilisateurRoutes');
 const congeRoutes = require('./routes/congeRoutes');
@@ -15,17 +18,53 @@ const authRoutes = require('./routes/authRoutes');
 const soldeCongeRoutes = require('./routes/soldeCongeRoutes');
 const joursFeriesRoutes = require('./routes/joursFeriesRoutes');
 
-// Middlewares
-const { authMiddleware } = require('./middlewares/authMiddleware');
-
 const app = express();
 
+// ------------------
 // Middlewares globaux
-app.use(cors());
+// ------------------
+app.use(helmet());
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// Routes
+// ------------------
+// Middleware auth JWT
+// ------------------
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ error: 'Token manquant' });
+
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token invalide' });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, payload) => {
+    if (err) return res.status(401).json({ error: 'Token invalide ou expiré' });
+    req.user = payload;
+    next();
+  });
+}
+
+// ------------------
+// Middleware rôle
+// ------------------
+function roleMiddleware(roles = []) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Accès refusé' });
+    next();
+  };
+}
+
+// ------------------
+// Routes publiques
+// ------------------
+app.use('/api/auth', authRoutes); // login, refresh token, register si besoin
+
+// ------------------
+// Routes sécurisées (JWT)
+app.use(authMiddleware);
+
 app.use('/api/entreprises', entrepriseRoutes);
 app.use('/api/utilisateurs', utilisateurRoutes);
 app.use('/api/conges', congeRoutes);
@@ -33,19 +72,39 @@ app.use('/api/dates-bloquees', dateBloqueeRoutes);
 app.use('/api/horaires-travail', horaireTravailRoutes);
 app.use('/api/regles-heures-supp', regleHeuresSuppRoutes);
 app.use('/api/pointages', pointageRoutes);
-app.use('/api/auth', authRoutes);
 app.use('/api/solde-conges', soldeCongeRoutes);
 app.use('/api/jours-feries', joursFeriesRoutes);
 
-// Test route
-app.get('/', (req, res) => res.json({ message: 'API TimeZone SaaS fonctionne !' }));
+// ------------------
+// Route test
+// ------------------
+app.get('/', (req, res) => res.json({ message: 'API TimeZone SaaS sécurisée fonctionne !' }));
 
-// Synchronisation DB et démarrage serveur
+// ------------------
+// Middleware global d'erreurs
+// ------------------
+app.use((err, _req, res, _next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({ error: err.message || 'Erreur interne du serveur' });
+});
+
+// ------------------
+// Démarrage serveur
+// ------------------
 const PORT = process.env.PORT || 5050;
+(async () => {
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      await sequelize.sync({ alter: true });
+      console.log('✅ DB synchronisée (alter)');
+    } else {
+      await sequelize.authenticate();
+      console.log('✅ Connexion DB OK');
+    }
 
-sequelize.sync({ alter: true }) 
-  .then(() => {
-    console.log('Connexion à la base OK');
-    app.listen(PORT, () => console.log(`Serveur démarré sur http://localhost:${PORT}`));
-  })
-  .catch(err => console.error('Erreur connexion DB:', err));
+    app.listen(PORT, () => console.log(`🚀 Serveur sécurisé démarré sur http://localhost:${PORT}`));
+  } catch (err) {
+    console.error('❌ Erreur connexion DB:', err);
+    process.exit(1);
+  }
+})();

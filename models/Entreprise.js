@@ -17,9 +17,5 @@ module.exports = (sequelize) => {
     }
   );
 
-  Entreprise.associate = (models) => {
-    Entreprise.hasMany(models.Utilisateur, { foreignKey: "entrepriseId", as: "utilisateurs" });
-  };
-
   return Entreprise;
 };

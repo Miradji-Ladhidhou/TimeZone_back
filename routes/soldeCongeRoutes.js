@@ -2,18 +2,25 @@ const express = require("express");
 const router = express.Router();
 const soldeCongeController = require("../controllers/soldeCongeController");
 const { authMiddleware } = require("../middlewares/authMiddleware");
+const { roleMiddleware } = require("../middlewares/roleMiddleware");
 
-// ========================
-// Routes pour la gestion des soldes de congés
-// ========================
+router.use(authMiddleware);
 
-// Récupérer le solde du user connecté
-router.get("/me", authMiddleware, soldeCongeController.getSoldeConge);
+// GET /solde/me → utilisateur connecté
+router.get("/me", soldeCongeController.getSoldeConge);
 
-// Mettre à jour le solde (admin entreprise uniquement)
-router.put("/", authMiddleware, soldeCongeController.updateSoldeConge);
+// PUT /solde → admin_entreprise ou super_admin met à jour un type précis
+router.put(
+  "/",
+  roleMiddleware(["admin_entreprise", "super_admin"]),
+  soldeCongeController.updateSoldeConge
+);
 
-// Supprimer un solde (admin entreprise uniquement)
-router.delete("/:utilisateurId", authMiddleware, soldeCongeController.deleteSoldeConge);
+// DELETE /solde/:utilisateurId/:typeConge → supprime un type précis
+router.delete(
+  "/:utilisateurId/:typeConge",
+  roleMiddleware(["admin_entreprise", "super_admin"]),
+  soldeCongeController.deleteSoldeConge
+);
 
 module.exports = router;
