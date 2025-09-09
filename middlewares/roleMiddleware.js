@@ -1,17 +1,26 @@
 const roleMiddleware = (allowedRoles = []) => {
   return (req, res, next) => {
-    // Vérifier que authMiddleware a été exécuté
-    if (!req.user || !req.user.role) {
-      return res.status(403).json({ error: 'Rôle non défini. Assurez-vous que authMiddleware est appliqué avant.' });
+    if (!req.user) {
+      console.warn(`Tentative d'accès non authentifiée à ${req.method} ${req.originalUrl}`);
+      return res.status(401).json({ error: 'Utilisateur non authentifié. AuthMiddleware requis.' });
     }
 
-    // Vérifier si le rôle est autorisé
-    if (!allowedRoles.includes(req.user.role)) {
+    const { id, role, entrepriseId } = req.user;
+
+    // Si le rôle n’est pas autorisé, log détaillé
+    if (!allowedRoles.includes(role)) {
+      console.warn(
+        `ACCES REFUSE : User ${id} | Rôle : ${role} | Entreprise : ${entrepriseId || 'N/A'} | ` +
+        `Méthode : ${req.method} | URL : ${req.originalUrl}`
+      );
       return res.status(403).json({ 
         error: 'Accès refusé : rôle non autorisé',
-        roleActuel: req.user.role
+        roleActuel: role
       });
     }
+
+    // Pour le debug léger : accès autorisé
+    console.log(`ACCES AUTORISE : User ${id} | Rôle : ${role} | Méthode : ${req.method} | URL : ${req.originalUrl}`);
 
     next();
   };
