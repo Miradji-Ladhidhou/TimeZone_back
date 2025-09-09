@@ -12,11 +12,13 @@ const utilisateurRoutes = require('./routes/utilisateurRoutes');
 const congeRoutes = require('./routes/congeRoutes');
 const dateBloqueeRoutes = require('./routes/dateBloqueeRoutes');
 const horaireTravailRoutes = require('./routes/horaireTravailRoutes');
-const regleHeuresSuppRoutes = require('./routes/regleHeuresSuppRoutes');
+const regleHeureSuppRoutes = require('./routes/regleHeureSuppRoutes');
 const pointageRoutes = require('./routes/pointageRoutes');
 const authRoutes = require('./routes/authRoutes');
 const soldeCongeRoutes = require('./routes/soldeCongeRoutes');
-const joursFeriesRoutes = require('./routes/joursFeriesRoutes');
+const jourFerieRoutes = require('./routes/jourFerieRoutes');
+const logActionRoutes = require('./routes/logActionRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const app = express();
 
@@ -70,10 +72,12 @@ app.use('/api/utilisateurs', utilisateurRoutes);
 app.use('/api/conges', congeRoutes);
 app.use('/api/dates-bloquees', dateBloqueeRoutes);
 app.use('/api/horaires-travail', horaireTravailRoutes);
-app.use('/api/regles-heures-supp', regleHeuresSuppRoutes);
+app.use('/api/regles-heures-supp', regleHeureSuppRoutes);
 app.use('/api/pointages', pointageRoutes);
 app.use('/api/solde-conges', soldeCongeRoutes);
-app.use('/api/jours-feries', joursFeriesRoutes);
+app.use('/api/jours-feries', jourFerieRoutes);
+app.use('/api/logs-actions', logActionRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // ------------------
 // Route test
@@ -95,16 +99,16 @@ const PORT = process.env.PORT || 5050;
 (async () => {
   try {
     if (process.env.NODE_ENV !== 'production') {
-      await sequelize.sync({ alter: true });
-      console.log('✅ DB synchronisée (alter)');
+      await sequelize.sync();
+      console.log('DB synchronisée (alter)');
     } else {
       await sequelize.authenticate();
-      console.log('✅ Connexion DB OK');
+      console.log('Connexion DB OK');
     }
 
-    app.listen(PORT, () => console.log(`🚀 Serveur sécurisé démarré sur http://localhost:${PORT}`));
+    app.listen(PORT, () => console.log(`Serveur sécurisé démarré sur http://localhost:${PORT}`));
   } catch (err) {
-    console.error('❌ Erreur connexion DB:', err);
+    console.error('Erreur connexion DB:', err);
     process.exit(1);
   }
 })();

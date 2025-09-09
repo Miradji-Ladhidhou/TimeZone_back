@@ -1,4 +1,4 @@
-const { Sequelize } = require("sequelize");
+const { Sequelize, DataTypes } = require("sequelize");
 require("dotenv").config();
 
 // Connexion à la base de données
@@ -15,17 +15,17 @@ const sequelize = new Sequelize(
 );
 
 // Import des modèles
-const Entreprise = require("./Entreprise")(sequelize);
-const Utilisateur = require("./Utilisateur")(sequelize);
-const HoraireTravail = require("./HoraireTravail")(sequelize);
-const RegleHeuresSupp = require("./RegleHeuresSupp")(sequelize);
-const Conge = require("./Conge")(sequelize);
-const DateBloquee = require("./DateBloquee")(sequelize);
-const Pointage = require("./Pointage")(sequelize);
-const JoursFeries = require("./JoursFeries")(sequelize);
-const SoldeConge = require("./SoldeConge")(sequelize);
-const Notification = require("./Notification")(sequelize);
-const LogAction = require("./LogAction")(sequelize);
+const Entreprise = require("./Entreprise")(sequelize, DataTypes);
+const Utilisateur = require("./Utilisateur")(sequelize, DataTypes);
+const HoraireTravail = require("./HoraireTravail")(sequelize, DataTypes);
+const RegleHeureSupp = require("./RegleHeureSupp")(sequelize, DataTypes);
+const Conge = require("./Conge")(sequelize, DataTypes);
+const DateBloquee = require("./DateBloquee")(sequelize, DataTypes);
+const Pointage = require("./Pointage")(sequelize, DataTypes);
+const JourFerie = require("./JourFerie")(sequelize, DataTypes);
+const SoldeConge = require("./SoldeConge")(sequelize, DataTypes);
+const Notification = require("./Notification")(sequelize, DataTypes);
+const LogAction = require("./LogAction")(sequelize, DataTypes);
 
 // ========================
 // Associations
@@ -44,12 +44,12 @@ Utilisateur.hasMany(HoraireTravail, { foreignKey: "utilisateurId", as: "horaires
 HoraireTravail.belongsTo(Utilisateur, { foreignKey: "utilisateurId", as: "utilisateur" });
 
 // Entreprise → ReglesHeuresSupp
-Entreprise.hasMany(RegleHeuresSupp, { foreignKey: "entrepriseId", as: "reglesHeuresSupp", onDelete: "CASCADE" });
-RegleHeuresSupp.belongsTo(Entreprise, { foreignKey: "entrepriseId", as: "entreprise" });
+Entreprise.hasMany(RegleHeureSupp, { foreignKey: "entrepriseId", as: "reglesHeuresSupp", onDelete: "CASCADE" });
+RegleHeureSupp.belongsTo(Entreprise, { foreignKey: "entrepriseId", as: "entreprise" });
 
 // Utilisateur → ReglesHeuresSupp
-Utilisateur.hasMany(RegleHeuresSupp, { foreignKey: "utilisateurId", as: "reglesHeuresSupp" });
-RegleHeuresSupp.belongsTo(Utilisateur, { foreignKey: "utilisateurId", as: "utilisateur" });
+Utilisateur.hasMany(RegleHeureSupp, { foreignKey: "utilisateurId", as: "reglesHeuresSupp" });
+RegleHeureSupp.belongsTo(Utilisateur, { foreignKey: "utilisateurId", as: "utilisateur" });
 
 // Entreprise → Conges
 Entreprise.hasMany(Conge, { foreignKey: "entrepriseId", as: "conges", onDelete: "CASCADE" });
@@ -71,9 +71,9 @@ Pointage.belongsTo(Entreprise, { foreignKey: "entrepriseId", as: "entreprise" })
 Utilisateur.hasMany(Pointage, { foreignKey: "utilisateurId", as: "pointages" });
 Pointage.belongsTo(Utilisateur, { foreignKey: "utilisateurId", as: "utilisateur" });
 
-// Entreprise → JoursFeries
-Entreprise.hasMany(JoursFeries, { foreignKey: "entrepriseId", as: "joursFeries", onDelete: "CASCADE" });
-JoursFeries.belongsTo(Entreprise, { foreignKey: "entrepriseId", as: "entreprise" });
+// Entreprise → JourFerie
+Entreprise.hasMany(JourFerie, { foreignKey: "entrepriseId", as: "JourFerie", onDelete: "CASCADE" });
+JourFerie.belongsTo(Entreprise, { foreignKey: "entrepriseId", as: "entreprise" });
 
 // Utilisateur → SoldeConge
 Utilisateur.hasMany(SoldeConge, { foreignKey: "utilisateurId", as: "soldesConge", onDelete: "CASCADE" });
@@ -92,11 +92,11 @@ module.exports = {
   Entreprise,
   Utilisateur,
   HoraireTravail,
-  RegleHeuresSupp,
+  RegleHeureSupp,
   Conge,
   DateBloquee,
   Pointage,
-  JoursFeries,
+  JourFerie,
   SoldeConge,
   Notification,
   LogAction,

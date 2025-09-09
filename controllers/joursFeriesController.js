@@ -5,7 +5,7 @@ const { JoursFeries } = require('../models');
 // ========================
 exports.createJourFerie = async (req, res) => {
   try {
-    const { date, description, deduire_temps } = req.body;
+    const { date, description, deduireTemps } = req.body;
     let entrepriseId = null;
 
     if (req.user.role === "super_admin") {
@@ -20,7 +20,7 @@ exports.createJourFerie = async (req, res) => {
       entrepriseId,
       date,
       description,
-      deduire_temps
+      deduireTemps
     });
 
     res.status(201).json(jourFerie);
@@ -85,8 +85,8 @@ exports.updateJourFerie = async (req, res) => {
       (req.user.role === "admin_entreprise" && jour.entrepriseId === req.user.entrepriseId)
     ) {
       // Filtrage strict des champs modifiables
-      const { date, description, deduire_temps } = req.body;
-      await jour.update({ date, description, deduire_temps });
+      const { date, description, deduireTemps } = req.body;
+      await jour.update({ date, description, deduireTemps });
       return res.json(jour);
     }
 

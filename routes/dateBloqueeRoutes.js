@@ -42,7 +42,7 @@ router.put(
 
     next();
   },
-  dateController.updateDateBloquee
+  dateBloqueeController.updateDateBloquee
 );
 
 

@@ -6,11 +6,11 @@ const { sendEmail } = require('../utils/emailService');
 // LOGIN
 exports.login = async (req, res) => {
   try {
-    const { email, mot_de_passe } = req.body;
+    const { email, motDePasse } = req.body;
     const utilisateur = await Utilisateur.scope('withPassword').findOne({ where: { email } });
     if (!utilisateur || !utilisateur.actif) return res.status(401).json({ error: 'Email ou mot de passe invalide' });
 
-    const match = await bcrypt.compare(mot_de_passe, utilisateur.mot_de_passe);
+    const match = await bcrypt.compare(motDePasse, utilisateur.motDePasse);
     if (!match) return res.status(401).json({ error: 'Email ou mot de passe invalide' });
 
     const token = jwt.sign(
@@ -36,11 +36,11 @@ exports.changeMyPassword = async (req, res) => {
     const utilisateur = await Utilisateur.scope('withPassword').findByPk(req.user.id);
     if (!utilisateur) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
-    const ok = await bcrypt.compare(currentPassword, utilisateur.mot_de_passe);
+    const ok = await bcrypt.compare(currentPassword, utilisateur.motDePasse);
     if (!ok) return res.status(400).json({ error: 'Mot de passe actuel invalide' });
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await utilisateur.update({ mot_de_passe: hash });
+    await utilisateur.update({ motDePasse: hash });
 
     // Envoi d'email après modification
     const subject = 'Confirmation de changement de mot de passe';
@@ -80,7 +80,7 @@ exports.resetPassword = async (req, res) => {
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await utilisateur.update({ mot_de_passe: hash });
+    await utilisateur.update({ motDePasse: hash });
     res.json({ message: 'Mot de passe réinitialisé' });
   } catch (err) {
     res.status(400).json({ error: err.message });

@@ -19,12 +19,12 @@ exports.createDateBloquee = async (req, res) => {
     // Forcer entrepriseId si pas super_admin
     if (req.user.role !== 'super_admin') req.body.entrepriseId = req.user.entrepriseId;
 
-    const { date_debut, date_fin, raison } = req.body;
+    const { dateDebut, dateFin, raison } = req.body;
 
     const dateBloquee = await DateBloquee.create({
       entrepriseId: req.body.entrepriseId,
-      date_debut,
-      date_fin,
+      dateDebut,
+      dateFin,
       raison
     });
 
@@ -78,8 +78,8 @@ exports.updateDateBloquee = async (req, res) => {
       return res.status(403).json({ error: 'Accès refusé' });
 
     // Filtrer uniquement les champs modifiables
-    const { date_debut, date_fin, raison } = req.body;
-    await dateBloquee.update({ date_debut, date_fin, raison });
+    const { dateDebut, dateFin, raison } = req.body;
+    await dateBloquee.update({ dateDebut, dateFin, raison });
 
     res.json(dateBloquee);
   } catch (err) {

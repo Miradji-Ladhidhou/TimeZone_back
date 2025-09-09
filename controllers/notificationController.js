@@ -3,9 +3,9 @@ const { Notification, Utilisateur } = require("../models");
 // Créer une notification
 exports.createNotification = async (req, res) => {
   try {
-    const { utilisateur_id, type, message } = req.body;
+    const { utilisateurId, type, message } = req.body;
 
-    const notif = await Notification.create({ utilisateur_id, type, message });
+    const notif = await Notification.create({ utilisateurId, type, message });
 
     res.status(201).json(notif);
   } catch (err) {
@@ -19,7 +19,7 @@ exports.getNotificationsByUser = async (req, res) => {
     const { utilisateurId } = req.params;
 
     const notifs = await Notification.findAll({
-      where: { utilisateur_id: utilisateurId },
+      where: { utilisateurId: utilisateurId },
       order: [["date_creation", "DESC"]]
     });
 

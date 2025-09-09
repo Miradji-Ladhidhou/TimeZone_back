@@ -4,20 +4,23 @@ const bcrypt = require('bcrypt');
 // Super admin : créer entreprise + admin initial optionnel
 exports.createEntreprise = async (req, res) => {
   try {
-    const { nom, adresse, pays, fuseau_horaire, admin } = req.body;
+    const { nom, adresse, pays, fuseauHoraire, admin } = req.body;
 
     if (!nom) return res.status(400).json({ error: "Nom de l'entreprise requis" });
 
-    const entreprise = await Entreprise.create({ nom, adresse, pays, fuseau_horaire });
+    const entreprise = await Entreprise.create({ nom, adresse, pays, fuseauHoraire });
 
     // Création admin_entreprise si fourni
-    if (admin && admin.email && admin.mot_de_passe && admin.nom) {
-      const hash = await bcrypt.hash(admin.mot_de_passe, 10);
+    if (admin && admin.email && admin.motDePasse && admin.nom) {
+      const existingAdmin = await Utilisateur.findOne({ where: { email: admin.email } });
+      if (existingAdmin) return res.status(400).json({ error: "Email admin déjà utilisé" });
+
+      const hash = await bcrypt.hash(admin.motDePasse, 10);
       await Utilisateur.create({
         nom: admin.nom,
         prenom: admin.prenom || null,
         email: admin.email,
-        mot_de_passe: hash,
+        motDePasse: hash,
         role: 'admin_entreprise',
         actif: true,
         entrepriseId: entreprise.id,
@@ -67,6 +70,10 @@ exports.getEntrepriseById = async (req, res) => {
 // Mettre à jour entreprise (super_admin uniquement)
 exports.updateEntreprise = async (req, res) => {
   try {
+    if (req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Accès refusé" });
+    }
+
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: "ID invalide" });
 
@@ -74,9 +81,9 @@ exports.updateEntreprise = async (req, res) => {
     if (!entreprise) return res.status(404).json({ error: "Entreprise non trouvée" });
 
     // Filtrer champs autorisés
-    const allowed = ['nom', 'adresse', 'pays', 'fuseau_horaire'];
+    const allowed = ['nom', 'adresse', 'pays', 'fuseauHoraire'];
     const data = {};
-    allowed.forEach(field => { if(req.body[field] !== undefined) data[field] = req.body[field] });
+    allowed.forEach(field => { if (req.body[field] !== undefined) data[field] = req.body[field] });
 
     await entreprise.update(data);
     res.json(entreprise);

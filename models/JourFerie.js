@@ -1,11 +1,9 @@
-const { DataTypes } = require('sequelize');
-
-module.exports = (sequelize) => {
-  const JoursFeries = sequelize.define(
-    'JoursFeries',
+module.exports = (sequelize, DataTypes) => {
+  const JourFerie = sequelize.define(
+    'JourFerie',
     {
       entrepriseId: { type: DataTypes.INTEGER,
-         allowNull: false,
+         allowNull: true,
          field: 'entreprise_id',
          references: {
            model: 'entreprises',
@@ -42,5 +40,5 @@ module.exports = (sequelize) => {
     }
   );
 
-  return JoursFeries;
+  return JourFerie;
 }

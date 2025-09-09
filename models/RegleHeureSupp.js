@@ -1,8 +1,6 @@
-const { DataTypes } = require("sequelize");
-
-module.exports = (sequelize) => {
-  const RegleHeuresSupp = sequelize.define(
-    "RegleHeuresSupp",
+module.exports = (sequelize, DataTypes) => {
+  const RegleHeureSupp = sequelize.define(
+    "RegleHeureSupp",
     {
       entrepriseId: {
         type: DataTypes.INTEGER,
@@ -50,5 +48,5 @@ module.exports = (sequelize) => {
     }
   );
 
-  return RegleHeuresSupp;
+  return RegleHeureSupp;
 };

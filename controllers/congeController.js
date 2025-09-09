@@ -1,25 +1,27 @@
-const { Conge, Utilisateur, Entreprise, DatesBloquee, JoursFeries } = require('../models');
+const { Conge, Utilisateur, Entreprise, DateBloquee, JourFerie, Notification } = require('../models');
 const { Op } = require("sequelize");
 const { envoyerEmail } = require('../utils/emailService');
 const { majSolde } = require('../utils/solde');
-const { Notification } = require('../models');
+const { logAction } = require('../utils/logService');
 
 // ========================
 // Helper : calcul jours effectifs (hors fériés non déduits)
 // ========================
 const calculerJoursEffectifs = async (conge) => {
-  const totalJours = Math.ceil(
-    (new Date(conge.date_fin) - new Date(conge.date_debut)) / (1000 * 60 * 60 * 24)
-  ) + 1;
+  const start = new Date(conge.dateDebut);
+  const end = new Date(conge.dateFin);
+  const diff = (Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) -
+                Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) / (1000 * 60 * 60 * 24);
+  const totalJours = diff >= 0 ? diff + 1 : 0;
 
-  const joursFeries = await JoursFeries.findAll({
+  const joursFeries = await JourFerie.findAll({
     where: {
       [Op.or]: [
         { entrepriseId: null },
         { entrepriseId: conge.entrepriseId }
       ],
-      date: { [Op.between]: [conge.date_debut, conge.date_fin] },
-      deduire_temps: false
+      date: { [Op.between]: [conge.dateDebut, conge.dateFin] },
+      deduireTemps: false
     }
   });
 
@@ -31,111 +33,77 @@ const calculerJoursEffectifs = async (conge) => {
 // ========================
 exports.createConge = async (req, res) => {
   try {
-    const { date_debut, date_fin, typeConge } = req.body;
+    const { dateDebut, dateFin, typeConge } = req.body;
     const utilisateurId = req.user.id;
     const entrepriseId = req.user.entrepriseId;
 
-    // ========================
-    //  Vérifier chevauchements avec les autres congés
-    // ========================
+    // Validation simple
+    if (!dateDebut || !dateFin) 
+      return res.status(400).json({ error: "Dates invalides" });
+
+    if (new Date(dateFin) < new Date(dateDebut))
+      return res.status(400).json({ error: "dateFin doit être après dateDebut" });
+
+    // Vérifier chevauchements congés et dates bloquées
     const chevauchements = await Conge.findAll({
       where: {
         utilisateurId,
         statut: { [Op.in]: ["en_attente", "approuve"] },
         [Op.or]: [
-          { date_debut: { [Op.between]: [date_debut, date_fin] } },
-          { date_fin: { [Op.between]: [date_debut, date_fin] } },
-          {
-            [Op.and]: [
-              { date_debut: { [Op.lte]: date_debut } },
-              { date_fin: { [Op.gte]: date_fin } }
-            ]
-          }
+          { dateDebut: { [Op.between]: [dateDebut, dateFin] } },
+          { dateFin: { [Op.between]: [dateDebut, dateFin] } },
+          { [Op.and]: [{ dateDebut: { [Op.lte]: dateDebut } }, { dateFin: { [Op.gte]: dateFin } }] }
         ]
       }
     });
-
-    if (chevauchements.length > 0)
+    if (chevauchements.length > 0) 
       return res.status(400).json({ error: "Chevauchement avec un autre congé" });
 
-    // ========================
-    //  Vérifier chevauchements avec les dates bloquées
-    // ========================
-    const datesBloquees = await DatesBloquee.findAll({
+    const datesBloquees = await DateBloquee.findAll({
       where: {
         entrepriseId,
         [Op.or]: [
-          { date_debut: { [Op.between]: [date_debut, date_fin] } },
-          { date_fin: { [Op.between]: [date_debut, date_fin] } },
-          {
-            [Op.and]: [
-              { date_debut: { [Op.lte]: date_debut } },
-              { date_fin: { [Op.gte]: date_fin } }
-            ]
-          }
+          { dateDebut: { [Op.between]: [dateDebut, dateFin] } },
+          { dateFin: { [Op.between]: [dateDebut, dateFin] } },
+          { [Op.and]: [{ dateDebut: { [Op.lte]: dateDebut } }, { dateFin: { [Op.gte]: dateFin } }] }
         ]
       }
     });
-
-    if (datesBloquees.length > 0)
+    if (datesBloquees.length > 0) 
       return res.status(400).json({ error: "Ces dates sont bloquées par l'entreprise" });
 
-    // ========================
-    //  Vérifier jours fériés interdits
-    // ========================
-    const joursFeries = await JoursFeries.findAll({
+    // Vérifier jours fériés interdits
+    const joursFeries = await JourFerie.findAll({
       where: {
-        [Op.or]: [
-          { entrepriseId: null },
-          { entrepriseId }
-        ],
-        date: { [Op.between]: [date_debut, date_fin] }
+        [Op.or]: [{ entrepriseId: null }, { entrepriseId: entrepriseId }],
+        date: { [Op.between]: [dateDebut, dateFin] }
       }
     });
-
-    if (joursFeries.some(j => j.deduire_temps === false))
+    if (joursFeries.some(j => j.deduireTemps === false))
       return res.status(400).json({ error: "La période inclut des jours non travaillés (fériés interdits)" });
 
-    // ========================
-    //  Créer le congé
-    // ========================
-    const conge = await Conge.create({
-      utilisateurId,
-      entrepriseId,
-      date_debut,
-      date_fin,
-      typeConge,
-      statut: "en_attente"
+    // Créer le congé
+    const conge = await Conge.create({ utilisateurId, entrepriseId, dateDebut, dateFin, typeConge, statut: "en_attente" });
+
+    // Notifications et emails en parallèle
+    const admins = await Utilisateur.findAll({ 
+      where: { entrepriseId, role: { [Op.in]: ["admin_entreprise", "manager"] } } 
     });
 
-    // ========================
-    //  Notification aux admins/managers
-    // ========================
-    const admins = await Utilisateur.findAll({
-      where: {
-        entrepriseId,
-        role: { [Op.in]: ["admin_entreprise", "manager"] }
-      }
+    await Promise.all(admins.map(async (admin) => {
+      if (admin.email) 
+        await envoyerEmail(admin.email, "Nouvelle demande de congé", `Nouvelle demande de congé par ${req.user.nom} ${req.user.prenom}.`);
+      await Notification.create({ utilisateurId: admin.id, type: "nouveau_conge", message: `Nouvelle demande de congé de ${req.user.nom} ${req.user.prenom}.` });
+    }));
+
+    // Log action
+    await logAction({
+      utilisateurId: req.user.id,
+      action: "create",
+      tableCible: "Conge",
+      elementId: conge.id,
+      details: `Demande de congé du ${dateDebut} au ${dateFin}, type: ${typeConge}`
     });
-
-    for (const admin of admins) {
-      if (admin.email) {
-        await envoyerEmail(
-          admin.email,
-          "Nouvelle demande de congé",
-          `Une nouvelle demande de congé a été soumise par ${req.user.nom} ${req.user.prenom}.`
-        );
-      }
-    }
-
-    // Créer une notification dans la base de données
-    for (const admin of admins) {
-      await Notification.create({
-        utilisateur_id: admin.id,
-        type: "nouveau_conge",
-        message: `Nouvelle demande de congé de ${req.user.nom} ${req.user.prenom}.`
-      });
-    }
 
     res.status(201).json(conge);
 
@@ -143,8 +111,6 @@ exports.createConge = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
 
 // ========================
 // Récupérer tous les congés (filtrage par rôle)
@@ -211,7 +177,26 @@ exports.updateConge = async (req, res) => {
     if (conge.utilisateurId !== req.user.id && !estAdmin)
       return res.status(403).json({ error: "Accès refusé" });
 
+    const oldCongeData = (({ dateDebut, dateFin, typeConge, statut }) => ({ dateDebut, dateFin, typeConge, statut }))(conge.toJSON());
+
     await conge.update(req.body);
+
+    // ========================
+    //  Log action
+    // ========================
+
+    await logAction({
+      utilisateurId: req.user.id,
+      action: "update",
+      tableCible: "Conge",
+      elementId: conge.id,
+      details: {
+        before: oldCongeData,
+        after: conge.toJSON()
+      }
+    });
+
+
     res.json(conge);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -258,7 +243,7 @@ exports.alertesConges = async (req, res) => {
     const alertes = await Conge.findAll({
       where: {
         statut: "en_attente",
-        date_debut: { [Op.lte]: aujourdHui },
+        dateDebut: { [Op.lte]: aujourdHui },
       },
       include: [{ model: Utilisateur, attributes: ['nom', 'prenom'] }]
     });
@@ -275,6 +260,8 @@ exports.validerConge = async (req, res) => {
   try {
     const conge = await Conge.findByPk(req.params.id);
     if (!conge) return res.status(404).json({ error: "Congé non trouvé" });
+
+    const oldCongeData = (({ dateDebut, dateFin, typeConge, statut }) => ({ dateDebut, dateFin, typeConge, statut }))(conge.toJSON());
 
     const { statut } = req.body;
     conge.statut = statut;
@@ -296,10 +283,26 @@ exports.validerConge = async (req, res) => {
 
     // Créer une notification pour l'employé
     await Notification.create({
-      utilisateur_id: conge.utilisateurId,
+      utilisateurId: conge.utilisateurId,
       type: "mise_a_jour_conge",
-      message: `Votre demande de congé du ${conge.date_debut} au ${conge.date_fin} a été ${statut}.`
+      message: `Votre demande de congé du ${conge.dateDebut} au ${conge.dateFin} a été ${statut}.`
     });
+
+    // ========================
+    //  Log action
+    // ========================
+
+    await logAction({
+      utilisateurId: req.user.id,
+      action: "valider",
+      tableCible: "Conge",
+      elementId: conge.id,
+      details: {
+        before: oldCongeData,
+        after: conge.toJSON()
+      }
+    });
+
 
     res.json(conge);
   } catch (err) {
@@ -328,9 +331,20 @@ exports.deleteConge = async (req, res) => {
 
     // Notification de suppression
     await Notification.create({
-      utilisateur_id: conge.utilisateurId,
+      utilisateurId: conge.utilisateurId,
       type: "suppression_conge",
-      message: `Votre congé du ${conge.date_debut} au ${conge.date_fin} a été supprimé.`
+      message: `Votre congé du ${conge.dateDebut} au ${conge.dateFin} a été supprimé.`
+    });
+
+    // ========================
+    //  Log action
+    // ========================
+    await logAction({
+      utilisateurId: req.user.id,
+      action: "delete",
+      tableCible: "Conge",
+      elementId: conge.id,
+      details: `Suppression du congé ID ${conge.id}`
     });
 
     res.json({ message: "Congé supprimé" });

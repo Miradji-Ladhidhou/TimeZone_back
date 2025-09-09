@@ -20,12 +20,18 @@ exports.createUtilisateur = async (req, res) => {
 
     const { nom, prenom, email } = req.body;
 
+    if (!email) return res.status(400).json({ error: 'Email requis' });
+    if (!nom) return res.status(400).json({ error: 'Nom requis' });
+
+    // Vérifier si l'email existe déjà
+    const existing = await Utilisateur.findOne({ where: { email } });
+    if (existing) return res.status(400).json({ error: "Email déjà utilisé" });
+
     // rôle imposé par le serveur (pas depuis le front)
     let role = 'employe';
     let entrepriseId = req.body.entrepriseId;
 
     if (req.user.role === 'super_admin') {
-      // super_admin peut créer admin_entreprise/manager/employe
       const requestedRole = req.body.role;
       if (['admin_entreprise', 'manager', 'employe'].includes(requestedRole)) {
         role = requestedRole;
@@ -39,15 +45,16 @@ exports.createUtilisateur = async (req, res) => {
 
     // Vérification de l'existence de l'entreprise
     const entreprise = await Entreprise.findByPk(entrepriseId);
-    if (!entreprise) {
-      return res.status(400).json({ error: 'Entreprise non trouvée' });
-    }
+    if (!entreprise) return res.status(400).json({ error: 'Entreprise non trouvée' });
 
     const plainPassword = generatePassword(12);
     const hash = await bcrypt.hash(plainPassword, 10);
+
     const utilisateur = await Utilisateur.create({
-      nom, prenom, email,
-      mot_de_passe: hash,
+      nom,
+      prenom,
+      email,
+      motDePasse: hash,
       role,
       entrepriseId,
       actif: true,
@@ -91,6 +98,7 @@ exports.createUtilisateur = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
 
 // Lire tous les utilisateurs (visibilité)
 exports.getAllUtilisateurs = async (req, res) => {
@@ -148,8 +156,8 @@ exports.updateUtilisateur = async (req, res) => {
     }
 
     // mot de passe si fourni (réhash)
-    if (req.body.mot_de_passe) {
-      req.body.mot_de_passe = await bcrypt.hash(req.body.mot_de_passe, 10);
+    if (req.body.motDePasse) {
+      req.body.motDePasse = await bcrypt.hash(req.body.motDePasse, 10);
     }
 
     // empêcher le changement d’entrepriseId sauf super_admin
