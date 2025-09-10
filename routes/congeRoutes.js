@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const congeController = require('../controllers/congeController');
+const { exportCongePDF} = require('../controllers/congeController');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 const { roleMiddleware } = require('../middlewares/roleMiddleware');
 
@@ -82,5 +83,8 @@ router.delete(
   roleMiddleware(['super_admin', 'admin_entreprise', 'manager']),
   congeController.deleteConge
 );
+
+// Génération PDF
+router.get("/export-pdf", authMiddleware, exportCongePDF);
 
 module.exports = router;

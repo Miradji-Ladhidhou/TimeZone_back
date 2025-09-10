@@ -100,7 +100,6 @@ const PORT = process.env.PORT || 5050;
   try {
     if (process.env.NODE_ENV !== 'production') {
       await sequelize.sync();
-      console.log('DB synchronisée (alter)');
     } else {
       await sequelize.authenticate();
       console.log('Connexion DB OK');

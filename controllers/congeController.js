@@ -3,6 +3,7 @@ const { Op } = require("sequelize");
 const { envoyerEmail } = require('../utils/emailService');
 const { majSolde } = require('../utils/solde');
 const { logAction } = require('../utils/logService');
+const puppeteer = require('puppeteer');
 
 // ========================
 // Helper : calcul jours effectifs (hors fériés non déduits)
@@ -349,6 +350,127 @@ exports.deleteConge = async (req, res) => {
 
     res.json({ message: "Congé supprimé" });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ========================
+// PDF congés
+// ========================
+exports.exportCongePDF = async (req, res) => {
+  try {
+    const { startDate, endDate, entrepriseId } = req.query;
+
+    if (req.user.role !== "super_admin" && req.user.entrepriseId != entrepriseId) {
+      return res.status(403).json({ error: "Accès refusé" });
+    }
+
+    const entreprise = await Entreprise.findByPk(entrepriseId);
+    if (!entreprise) return res.status(404).json({ error: "Entreprise non trouvée" });
+
+    const conges = await Conge.findAll({
+      where: {
+        entrepriseId,
+        dateDebut: { $gte: startDate || "1900-01-01" },
+        dateFin: { $lte: endDate || "2100-12-31" },
+      },
+      include: [{ model: Utilisateur, as: "utilisateur" }],
+      order: [["dateDebut", "ASC"]],
+    });
+
+    // Calcul résumé par type
+    const summary = {};
+    conges.forEach(c => {
+      summary[c.type] = (summary[c.type] || 0) + 1;
+    });
+
+    // HTML pour PDF
+    const html = `
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; color: #333; }
+            header { text-align: center; margin-bottom: 30px; }
+            header h1 { margin: 0; font-size: 26px; color: #007bff; }
+            header h2 { margin: 0; font-size: 18px; color: #555; }
+            header p { margin-top: 5px; font-size: 14px; color: #666; }
+            
+            .summary { margin-top: 20px; margin-bottom: 20px; }
+            .summary h3 { color: #007bff; }
+            .summary ul { list-style: none; padding: 0; }
+            .summary li { margin: 5px 0; }
+
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; border-radius: 8px; overflow: hidden; }
+            th, td { padding: 10px; text-align: center; }
+            th { background-color: #007bff; color: #fff; }
+            tbody tr:nth-child(even) { background-color: #f2f2f2; }
+            tbody tr:hover { background-color: #dbefff; }
+
+            footer { position: fixed; bottom: 20px; width: 100%; text-align: center; font-size: 12px; color: #888; border-top: 1px solid #ccc; padding-top: 5px;}
+          </style>
+        </head>
+        <body>
+          <header>
+            <h1>${entreprise.nom}</h1>
+            <h2>TimeZone App - Rapport officiel des congés</h2>
+            <p>Période : ${startDate || "Début"} → ${endDate || "Fin"}</p>
+          </header>
+
+          <section class="summary">
+            <h3>Résumé par type de congé</h3>
+            <ul>
+              ${Object.keys(summary).map(type => `<li>${type} : ${summary[type]} jours</li>`).join('')}
+            </ul>
+          </section>
+
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Employé</th>
+                <th>Type congé</th>
+                <th>Date début</th>
+                <th>Date fin</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${conges.map((c, i) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td>${c.utilisateur.prenom} ${c.utilisateur.nom}</td>
+                  <td>${c.type}</td>
+                  <td>${c.dateDebut}</td>
+                  <td>${c.dateFin}</td>
+                  <td>${c.statut}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <footer>
+            Généré par TimeZone App le ${new Date().toLocaleDateString()}.
+          </footer>
+        </body>
+      </html>
+    `;
+
+    const browser = await puppeteer.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: "50px", bottom: "50px", left: "30px", right: "30px" }
+    });
+    await browser.close();
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=Rapport_Conges_${entreprise.nom}.pdf`);
+    res.send(pdfBuffer);
+
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 };

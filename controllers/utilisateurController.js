@@ -14,39 +14,40 @@ const checkEntrepriseAccess = (req, entrepriseId) => {
 // admin_entreprise → peut créer manager/employe UNIQUEMENT dans sa propre entreprise (entrepriseId forcé)
 exports.createUtilisateur = async (req, res) => {
   try {
-    if (!['super_admin', 'admin_entreprise'].includes(req.user.role)) {
+    const allowedRoles = ['super_admin', 'admin_entreprise'];
+    if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
 
-    const { nom, prenom, email } = req.body;
+    const { nom, prenom, email, role: requestedRole } = req.body;
 
     if (!email) return res.status(400).json({ error: 'Email requis' });
     if (!nom) return res.status(400).json({ error: 'Nom requis' });
 
-    // Vérifier si l'email existe déjà
     const existing = await Utilisateur.findOne({ where: { email } });
-    if (existing) return res.status(400).json({ error: "Email déjà utilisé" });
+    if (existing) return res.status(400).json({ error: 'Email déjà utilisé' });
 
-    // rôle imposé par le serveur (pas depuis le front)
+    // Déterminer le rôle et l'entreprise
     let role = 'employe';
-    let entrepriseId = req.body.entrepriseId;
+    let entrepriseId;
 
     if (req.user.role === 'super_admin') {
-      const requestedRole = req.body.role;
+      // Super admin peut créer n'importe quel rôle et choisir l'entreprise
       if (['admin_entreprise', 'manager', 'employe'].includes(requestedRole)) {
         role = requestedRole;
       }
+      entrepriseId = req.body.entrepriseId;
       if (!entrepriseId) return res.status(400).json({ error: 'entrepriseId requis' });
     } else {
-      // admin_entreprise → limité à manager/employe et entreprise courante
-      if (req.body.role === 'manager') role = 'manager';
+      // Admin entreprise → limité à manager/employe et même entreprise que lui
+      role = requestedRole === 'manager' ? 'manager' : 'employe';
       entrepriseId = req.user.entrepriseId;
     }
 
-    // Vérification de l'existence de l'entreprise
     const entreprise = await Entreprise.findByPk(entrepriseId);
     if (!entreprise) return res.status(400).json({ error: 'Entreprise non trouvée' });
 
+    // Générer mot de passe temporaire
     const plainPassword = generatePassword(12);
     const hash = await bcrypt.hash(plainPassword, 10);
 
@@ -63,28 +64,20 @@ exports.createUtilisateur = async (req, res) => {
     // Envoi du mot de passe temporaire par email
     const subject = 'Bienvenue sur TimeZone App';
     const html = `<p>Bonjour ${utilisateur.prenom} ${utilisateur.nom},</p>
-      <p>Votre compte a été créé avec succès.</p>
-      <p>Pour l'entreprise : ${entreprise.nom}</p>
-      <p>Voici vos informations de connexion :</p>
-      <p>Email : ${email}</p>
-      <p>Mot de passe temporaire : <strong>${plainPassword}</strong></p>
-      <p>Veuillez vous connecter et changer votre mot de passe dès que possible.</p>
-      <p>Cordialement,<br>L’équipe TimeZone App</p>`;
+                  <p>Votre compte a été créé avec succès pour l'entreprise : ${entreprise.nom}</p>
+                  <p>Email : ${email}</p>
+                  <p>Mot de passe temporaire : <strong>${plainPassword}</strong></p>
+                  <p>Veuillez vous connecter et changer votre mot de passe dès que possible.</p>`;
 
     try {
-      await sendEmail({
-        to: email,
-        subject,
-        text: `Bonjour ${utilisateur.prenom} ${utilisateur.nom}, votre mot de passe temporaire est : ${plainPassword}`,
-        html
-      });
+      await sendEmail({ to: email, subject, text: `Mot de passe temporaire : ${plainPassword}`, html });
     } catch (err) {
-      console.error('Erreur lors de l\'envoi de l\'email:', err);
+      console.error('Erreur envoi email :', err);
       return res.status(500).json({ error: 'Erreur lors de l\'envoi de l\'email' });
     }
 
     res.status(201).json({
-      message: 'Utilisateur créé avec succès. Un mot de passe temporaire a été généré et envoyé par email.',
+      message: 'Utilisateur créé avec succès. Un mot de passe temporaire a été envoyé par email.',
       utilisateur: {
         id: utilisateur.id,
         nom: utilisateur.nom,
@@ -94,11 +87,12 @@ exports.createUtilisateur = async (req, res) => {
         entrepriseId: utilisateur.entrepriseId,
       },
     });
+
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
-
 
 // Lire tous les utilisateurs (visibilité)
 exports.getAllUtilisateurs = async (req, res) => {
