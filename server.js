@@ -19,6 +19,7 @@ const soldeCongeRoutes = require('./routes/soldeCongeRoutes');
 const jourFerieRoutes = require('./routes/jourFerieRoutes');
 const logActionRoutes = require('./routes/logActionRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const demandeCompteRoutes = require('./routes/demandeCompteRoutes');
 
 const app = express();
 
@@ -62,6 +63,7 @@ function roleMiddleware(roles = []) {
 // Routes publiques
 // ------------------
 app.use('/api/auth', authRoutes); // login, refresh token, register si besoin
+app.use('/api/demande-compte', demandeCompteRoutes);
 
 // ------------------
 // Routes sécurisées (JWT)
