@@ -4,9 +4,9 @@ const { sendEmail } = require("../utils/emailService");
 
 router.post("/", async (req, res) => {
   try {
-    const { nom, prenom, email, entreprise, nueroSiret, adresseEntreprise, pays, message } = req.body;
+    const { nom, prenom, email, entreprise, numeroSiret, adresseEntreprise, pays, message } = req.body;
 
-    if (!nom || !prenom || !email || !entreprise || !nueroSiret || !adresseEntreprise || !pays) {
+    if (!nom || !prenom || !email || !entreprise || !numeroSiret || !adresseEntreprise || !pays) {
       return res.status(400).json({ error: "Tous les champs obligatoires doivent être remplis" });
     }
 
@@ -15,7 +15,7 @@ router.post("/", async (req, res) => {
     const htmlAdmin = `
       <h2>Nouvelle demande reçue</h2>
       <p><strong>Entreprise :</strong> ${entreprise}</p>
-      <p><strong>Numéro SIRET :</strong> ${nueroSiret}</p>
+      <p><strong>Numéro SIRET :</strong> ${numeroSiret}</p>
       <p><strong>Contact :</strong> ${prenom} ${nom}</p>
       <p><strong>Email :</strong> ${email}</p>
       <p><strong>Adresse de l'entreprise :</strong> ${adresseEntreprise}</p>
