@@ -4,11 +4,11 @@ const bcrypt = require('bcrypt');
 // Super admin : créer entreprise + admin initial optionnel
 exports.createEntreprise = async (req, res) => {
   try {
-    const { nom, adresse, pays, fuseauHoraire, admin } = req.body;
+    const { nom, email, telephone, adresse, pays, fuseauHoraire, admin } = req.body;
 
     if (!nom) return res.status(400).json({ error: "Nom de l'entreprise requis" });
 
-    const entreprise = await Entreprise.create({ nom, adresse, pays, fuseauHoraire });
+    const entreprise = await Entreprise.create({ nom, email, telephone, adresse, pays, fuseauHoraire });
 
     // Création admin_entreprise si fourni
     if (admin && admin.email && admin.motDePasse && admin.nom) {
@@ -81,7 +81,7 @@ exports.updateEntreprise = async (req, res) => {
     if (!entreprise) return res.status(404).json({ error: "Entreprise non trouvée" });
 
     // Filtrer champs autorisés
-    const allowed = ['nom', 'adresse', 'pays', 'fuseauHoraire'];
+    const allowed = ['nom', 'email', 'telephone', 'adresse', 'pays', 'fuseauHoraire'];
     const data = {};
     allowed.forEach(field => { if (req.body[field] !== undefined) data[field] = req.body[field] });
 

@@ -3,6 +3,8 @@ module.exports = (sequelize, DataTypes) => {
     "Entreprise",
     {
       nom: { type: DataTypes.STRING(150), allowNull: false },
+      email: { type: DataTypes.STRING(150), allowNull: false },
+      telephone: { type: DataTypes.STRING(50) },
       adresse: { type: DataTypes.TEXT },
       pays: { type: DataTypes.STRING(100) },
       fuseauHoraire: {
