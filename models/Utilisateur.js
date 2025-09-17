@@ -22,12 +22,6 @@ module.exports = (sequelize, DataTypes) => {
 
       actif: { type: DataTypes.BOOLEAN, defaultValue: true },
 
-      dateEmbauche: { 
-        type: DataTypes.DATEONLY,
-        field: "date_embauche",
-        allowNull: true,
-      },
-
       entrepriseId: {
         type: DataTypes.INTEGER,
         allowNull: false,

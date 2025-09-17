@@ -94,7 +94,7 @@ exports.createUtilisateur = async (req, res) => {
   }
 };
 
-// Lire tous les utilisateurs (visibilité)
+// Lire tous les utilisateurs
 exports.getAllUtilisateurs = async (req, res) => {
   try {
     let where = {};
@@ -105,7 +105,18 @@ exports.getAllUtilisateurs = async (req, res) => {
     } else if (req.user.role === 'employe') {
       where.id = req.user.id;
     }
-    const utilisateurs = await Utilisateur.findAll({ where });
+
+    const includeEntreprise = {
+      model: Entreprise,
+      as: 'entreprise',
+      attributes: req.user.role === 'super_admin' ? ['id', 'nom'] : ['nom']
+    };
+
+    const utilisateurs = await Utilisateur.findAll({
+      where,
+      include: [includeEntreprise]
+    });
+
     res.json(utilisateurs);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -115,16 +126,27 @@ exports.getAllUtilisateurs = async (req, res) => {
 // Lire un utilisateur
 exports.getUtilisateurById = async (req, res) => {
   try {
-    const utilisateur = await Utilisateur.findByPk(req.params.id);
+    const includeEntreprise = {
+      model: Entreprise,
+      as: 'entreprise',
+      attributes: req.user.role === 'super_admin' ? ['id', 'nom'] : ['nom']
+    };
+
+    const utilisateur = await Utilisateur.findByPk(req.params.id, {
+      include: [includeEntreprise]
+    });
+
     if (!utilisateur) return res.status(404).json({ error: 'Utilisateur non trouvé' });
     if (!checkEntrepriseAccess(req, utilisateur.entrepriseId) && req.user.id !== utilisateur.id) {
       return res.status(403).json({ error: 'Accès refusé' });
     }
+
     res.json(utilisateur);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // Mettre à jour utilisateur
 exports.updateUtilisateur = async (req, res) => {
@@ -132,39 +154,55 @@ exports.updateUtilisateur = async (req, res) => {
     const utilisateur = await Utilisateur.findByPk(req.params.id);
     if (!utilisateur) return res.status(404).json({ error: 'Utilisateur non trouvé' });
 
-    // droits
     const self = req.user.id === utilisateur.id;
     const sameCompany = req.user.entrepriseId === utilisateur.entrepriseId;
-    const canAdmin = req.user.role === 'super_admin' || (req.user.role === 'admin_entreprise' && sameCompany);
+    const isSuperAdmin = req.user.role === 'super_admin';
+    const isAdminEntreprise = req.user.role === 'admin_entreprise';
 
-    if (!(self || canAdmin)) return res.status(403).json({ error: 'Accès refusé' });
+    // Protection : seul un super_admin peut modifier un autre admin_entreprise
+    if (utilisateur.role === 'admin_entreprise' && !isSuperAdmin && !self) {
+      return res.status(403).json({ error: 'Seul un super admin peut modifier un admin_entreprise' });
+    }
 
-    // on empêche la mise à jour du rôle par quiconque sauf super_admin (et admin_entreprise ne peut pas promouvoir admin)
+    const canAdmin =
+      isSuperAdmin ||
+      (isAdminEntreprise && sameCompany);
+
+    if (!(self || canAdmin)) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    // Règles sur les rôles
     if ('role' in req.body) {
-      if (req.user.role === 'super_admin') {
+      if (isSuperAdmin) {
         const allowed = ['admin_entreprise', 'manager', 'employe'];
-        if (!allowed.includes(req.body.role)) return res.status(400).json({ error: 'Rôle non autorisé' });
+        if (!allowed.includes(req.body.role)) {
+          return res.status(400).json({ error: 'Rôle non autorisé' });
+        }
       } else {
+        // Un admin_entreprise ou autre ne peut pas changer de rôle
         delete req.body.role;
       }
     }
 
-    // mot de passe si fourni (réhash)
+    // Réhash du mot de passe si fourni
     if (req.body.motDePasse) {
       req.body.motDePasse = await bcrypt.hash(req.body.motDePasse, 10);
     }
 
-    // empêcher le changement d’entrepriseId sauf super_admin
-    if ('entrepriseId' in req.body && req.user.role !== 'super_admin') {
+    // Bloquer changement d’entreprise sauf super_admin
+    if ('entrepriseId' in req.body && !isSuperAdmin) {
       delete req.body.entrepriseId;
     }
 
     await utilisateur.update(req.body);
     res.json(utilisateur);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
+
 
 // Supprimer utilisateur
 exports.deleteUtilisateur = async (req, res) => {
@@ -173,15 +211,27 @@ exports.deleteUtilisateur = async (req, res) => {
     if (!utilisateur) return res.status(404).json({ error: 'Utilisateur non trouvé' });
 
     const sameCompany = req.user.entrepriseId === utilisateur.entrepriseId;
-    const canDelete =
-      req.user.role === 'super_admin' ||
-      (req.user.role === 'admin_entreprise' && sameCompany);
+    const isSuperAdmin = req.user.role === 'super_admin';
+    const isAdminEntreprise = req.user.role === 'admin_entreprise';
 
-    if (!canDelete) return res.status(403).json({ error: 'Accès refusé' });
+    // Protection : seul un super_admin peut supprimer un autre admin_entreprise
+    if (utilisateur.role === 'admin_entreprise' && !isSuperAdmin) {
+      return res.status(403).json({ error: 'Seul un super admin peut supprimer un admin_entreprise' });
+    }
+
+    const canDelete =
+      isSuperAdmin ||
+      (isAdminEntreprise && sameCompany && utilisateur.role !== 'admin_entreprise');
+
+    if (!canDelete) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
 
     await utilisateur.destroy();
     res.json({ message: 'Utilisateur supprimé avec succès' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
+
